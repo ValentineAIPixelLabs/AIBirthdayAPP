@@ -1,0 +1,283 @@
+import Contacts
+import SwiftUI
+import Foundation
+import UIKit
+
+extension View {
+    func glassCircleStyle() -> some View {
+        self
+            .background(
+                Circle()
+                    .fill(.thinMaterial)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.18), lineWidth: 1.2)
+                    )
+            )
+            .clipShape(Circle())
+            .shadow(color: .black.opacity(0.13), radius: 10, x: 0, y: 4)
+    }
+}
+
+extension Birthday {
+    func toDate() -> Date? {
+        if let day = self.day, let month = self.month {
+            var components = DateComponents()
+            components.day = day
+            components.month = month
+            components.year = self.year ?? Calendar.current.component(.year, from: Date())
+            return Calendar.current.date(from: components)
+        } else {
+            return nil
+        }
+    }
+}
+
+// Use birthdayTitle(for:) from DateUtils.swift instead of local duplicate
+
+/*
+// Previous duplicate or alternative birthdayTitle functions removed as per instructions
+// func birthdayTitle(for contact: Contact) -> String {
+//     // Some other implementation
+// }
+*/
+
+struct ContactCardView: View {
+    let contact: Contact
+
+    var title: String { birthdayTitle(for: contact) }
+    var details: String {
+        return birthdayDateDetails(for: contact.birthday)
+    }
+    var subtitleText: String { subtitle(for: contact) }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            ContactAvatarView(contact: contact, size: 64)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.88)
+                Text(details)
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .opacity(0.96)
+                /*
+                if !subtitleText.isEmpty {
+                    Text(subtitleText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .opacity(0.96)
+                }
+                */
+            }
+            Spacer()
+        }
+        .padding()
+        .cardStyle()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 4)
+        .transition(.opacity.combined(with: .scale))
+    }
+}
+
+struct TopBarView: View {
+    @Binding var showAPIKeySheet: Bool
+    @ObservedObject var vm: ContactsViewModel
+
+    var body: some View {
+        HStack(alignment: .center) {
+            Text("Контакты")
+                .font(.title2).bold()
+                .foregroundColor(.primary)
+            Spacer()
+            Button(action: { showAPIKeySheet = true }) {
+                Image(systemName: "key")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(.accentColor)
+                    .frame(width: 44, height: 44)
+                    .background(.ultraThinMaterial.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(ActionButtonStyle())
+            Spacer(minLength: 8)
+            Button(action: { vm.isPresentingAdd = true }) {
+                Image(systemName: "plus")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(.accentColor)
+                    .frame(width: 44, height: 44)
+                    .background(.ultraThinMaterial.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(ActionButtonStyle())
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 20)
+    }
+}
+
+struct ContentView: View {
+    @StateObject var vm = ContactsViewModel()
+    @State private var showAPIKeySheet = false
+    @State private var contactToDelete: Contact?
+    @State private var showDeleteAlert = false
+    @State private var highlightedContactID: UUID?
+    @State private var isContactPickerPresented = false
+    @State private var showImportOptions: Bool = {
+        let hasShown = UserDefaults.standard.bool(forKey: "hasShownImportOptions")
+        return !hasShown
+    }()
+
+    private var gradient: LinearGradient {
+        LinearGradient(
+            gradient: Gradient(colors: [
+                Color.blue.opacity(0.18),
+                Color.purple.opacity(0.16),
+                Color.teal.opacity(0.14)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var contactList: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(spacing: 10) {
+                ForEach(vm.sortedContacts) { contact in
+                    NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
+                        ContactCardView(contact: contact)
+                            .scaleEffect(highlightedContactID == contact.id ? 0.95 : 1.0)
+                            .animation(.spring(response: 0.2, dampingFraction: 0.6), value: highlightedContactID)
+                    }
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.55)
+                            .onEnded { _ in
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                highlightedContactID = contact.id
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.17) {
+                                    contactToDelete = contact
+                                    showDeleteAlert = true
+                                    highlightedContactID = nil
+                                }
+                            }
+                    )
+                }
+            }
+            .padding(.top, 20)
+            .padding(.bottom, 40)
+        }
+    }
+
+    private var content: some View {
+        VStack(spacing: 0) {
+            TopBarView(showAPIKeySheet: $showAPIKeySheet, vm: vm)
+                .padding(.top, 40)
+            contactList
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                gradient
+                    .ignoresSafeArea()
+                content
+            }
+            .navigationBarHidden(true)
+            .edgesIgnoringSafeArea(.top)
+            .sheet(isPresented: $vm.isPresentingAdd) {
+                AddContactView(vm: vm)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            .sheet(isPresented: $showAPIKeySheet) {
+                APIKeyView()
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            .alert("Удалить контакт?", isPresented: $showDeleteAlert, presenting: contactToDelete) { contact in
+                Button("Удалить", role: .destructive) {
+                    vm.removeContact(contact)
+                }
+                Button("Отмена", role: .cancel) { }
+            } message: { contact in
+                Text("Контакт \(contact.name) будет удалён безвозвратно.")
+            }
+            .confirmationDialog("Импортировать контакты?", isPresented: $showImportOptions, titleVisibility: .visible) {
+                Button("Импортировать все контакты") {
+                    vm.importAllContacts()
+                    showImportOptions = false
+                    UserDefaults.standard.set(true, forKey: "hasShownImportOptions")
+                }
+                Button("Выбрать контакты") {
+                    isContactPickerPresented = true
+                }
+                Button("Отмена", role: .cancel) {
+                    showImportOptions = false
+                    UserDefaults.standard.set(true, forKey: "hasShownImportOptions")
+                }
+            }
+            .sheet(isPresented: $isContactPickerPresented) {
+                ContactPickerView { importedCNContact in
+                    handleImportedContact(importedCNContact)
+                }
+            }
+        }
+    }
+
+    func handleImportedContact(_ importedCNContact: CNContact) {
+        let importedContact = convertCNContactToContact(importedCNContact)
+        vm.addContact(importedContact)
+        isContactPickerPresented = false
+    }
+}
+
+
+extension UIImage {
+    func resizedForCropper(maxSide: CGFloat = 1200) -> UIImage {
+        let maxDimension = max(size.width, size.height)
+        guard maxDimension > maxSide else { return self }
+        let scale = maxSide / maxDimension
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        draw(in: CGRect(origin: .zero, size: newSize))
+        let newImage = UIGraphicsGetImageFromCurrentImageContext()!
+        UIGraphicsEndImageContext()
+        return newImage
+    }
+}
+
+// Преобразование CNContact в Contact
+func convertCNContactToContact(_ cnContact: CNContact) -> Contact {
+    var birthdayValue: Birthday? = nil
+    if let bday = cnContact.birthday {
+        if (bday.day ?? 0) > 0 && (bday.month ?? 0) > 0 {
+            birthdayValue = Birthday(
+                day: bday.day ?? 0,
+                month: bday.month ?? 0,
+                year: bday.year
+            )
+        } else {
+            birthdayValue = nil
+        }
+    } else {
+        birthdayValue = nil
+    }
+
+    return Contact(
+        id: UUID(),
+        name: cnContact.givenName,
+        surname: cnContact.familyName,
+        nickname: cnContact.nickname.isEmpty ? nil : cnContact.nickname,
+        relationType: nil,
+        gender: nil,
+        birthday: birthdayValue,
+        notificationSettings: .default,
+        imageData: cnContact.imageData,
+        emoji: nil,
+        occupation: cnContact.jobTitle.isEmpty ? nil : cnContact.jobTitle,
+        hobbies: nil,
+        leisure: nil,
+        additionalInfo: nil
+    )
+}
