@@ -6,7 +6,7 @@ struct ContactDetailView: View {
     @ObservedObject var vm: ContactsViewModel
     let contactId: UUID
 
-    @State private var isEditing = false
+    
     @State private var pickedImage: UIImage?
     @State private var showAvatarSheet = false
     @State private var showImagePicker = false
@@ -73,6 +73,7 @@ struct ContactDetailView: View {
     }
 
     @Environment(\.dismiss) var dismiss
+    @State private var selectedContactForEdit: Contact? = nil
 
     var contact: Contact? {
         vm.contacts.first(where: { $0.id == contactId })
@@ -89,12 +90,12 @@ struct ContactDetailView: View {
         }
         .navigationBarBackButtonHidden(true)
         .navigationBarHidden(true)
-        .sheet(isPresented: $isEditing) {
-            if let contact = contact {
-                EditContactView(vm: vm, contact: contact)
-            }
-        }
+        
+        .navigationDestination(item: $selectedContactForEdit) { contact in
+                    EditContactView(vm: vm, contact: contact)
+                }
         .transition(.move(edge: .bottom).combined(with: .opacity))
+        
         .sheet(isPresented: $showAvatarSheet) {
             AvatarPickerSheet(
                 onCamera: {
@@ -202,21 +203,8 @@ struct ContactDetailView: View {
             )
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
-        // .fullScreenCover(isPresented: $showHistorySheet) {
-        //     GreetingsHistoryFullScreenView(
-        //         isPresented: $showHistorySheet,
-        //         greetings: greetingsHistory,
-        //         onDelete: { idx in
-        //             if let contact = contact {
-        //                 var history = greetingsHistory
-        //                 history.remove(at: idx)
-        //                 saveHistory(history, for: contact.id)
-        //                 greetingsHistory = history
-        //             }
-        //         }
-        //     )
-        // }
-        // .transition(.move(edge: .bottom).combined(with: .opacity))
+       
+        
         .fullScreenCover(isPresented: $showCardHistorySheet) {
             CardsHistoryFullScreenView(
                 isPresented: $showCardHistorySheet,
@@ -592,14 +580,18 @@ struct ContactDetailView: View {
                 Image(systemName: "chevron.backward")
                     .font(.system(size: 20, weight: .semibold))
                     .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(.ultraThinMaterial.opacity(0.9), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
             }
             Spacer()
-            Button(action: { isEditing = true }) {
+            Button(action: {
+                if let contact = contact {
+                    selectedContactForEdit = contact
+                }
+            }) {
                 Image(systemName: "pencil")
                     .font(.system(size: 20, weight: .semibold))
                     .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(.ultraThinMaterial.opacity(0.9), in: RoundedRectangle(cornerRadius: 15))
             }
         }
         .padding(.horizontal, 12)

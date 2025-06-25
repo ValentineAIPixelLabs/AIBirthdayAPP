@@ -33,15 +33,6 @@ extension Birthday {
     }
 }
 
-// Use birthdayTitle(for:) from DateUtils.swift instead of local duplicate
-
-/*
-// Previous duplicate or alternative birthdayTitle functions removed as per instructions
-// func birthdayTitle(for contact: Contact) -> String {
-//     // Some other implementation
-// }
-*/
-
 struct ContactCardView: View {
     let contact: Contact
 
@@ -66,14 +57,6 @@ struct ContactCardView: View {
                     .font(.footnote)
                     .foregroundColor(.secondary)
                     .opacity(0.96)
-                /*
-                if !subtitleText.isEmpty {
-                    Text(subtitleText)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .opacity(0.96)
-                }
-                */
             }
             Spacer()
         }
@@ -87,7 +70,7 @@ struct ContactCardView: View {
 
 struct TopBarView: View {
     @Binding var showAPIKeySheet: Bool
-    @ObservedObject var vm: ContactsViewModel
+    var onAddTap: () -> Void
 
     var body: some View {
         HStack(alignment: .center) {
@@ -104,7 +87,7 @@ struct TopBarView: View {
             }
             .buttonStyle(ActionButtonStyle())
             Spacer(minLength: 8)
-            Button(action: { vm.isPresentingAdd = true }) {
+            Button(action: onAddTap) {
                 Image(systemName: "plus")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(.accentColor)
@@ -129,6 +112,7 @@ struct ContentView: View {
         let hasShown = UserDefaults.standard.bool(forKey: "hasShownImportOptions")
         return !hasShown
     }()
+    @State private var path = NavigationPath()
 
     private var gradient: LinearGradient {
         LinearGradient(
@@ -170,26 +154,23 @@ struct ContentView: View {
         }
     }
 
-    private var content: some View {
-        VStack(spacing: 0) {
-            TopBarView(showAPIKeySheet: $showAPIKeySheet, vm: vm)
-                .padding(.top, 40)
-            contactList
-        }
-    }
-
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack {
-                gradient
-                    .ignoresSafeArea()
-                content
+                gradient.ignoresSafeArea()
+                VStack(spacing: 0) {
+                    TopBarView(showAPIKeySheet: $showAPIKeySheet) {
+                        path.append("add")
+                    }
+                    
+                    contactList
+                }
             }
             .navigationBarHidden(true)
-            .edgesIgnoringSafeArea(.top)
-            .sheet(isPresented: $vm.isPresentingAdd) {
-                AddContactView(vm: vm)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            .navigationDestination(for: String.self) { destination in
+                if destination == "add" {
+                    AddContactView(vm: vm)
+                }
             }
             .sheet(isPresented: $showAPIKeySheet) {
                 APIKeyView()
@@ -232,7 +213,6 @@ struct ContentView: View {
     }
 }
 
-
 extension UIImage {
     func resizedForCropper(maxSide: CGFloat = 1200) -> UIImage {
         let maxDimension = max(size.width, size.height)
@@ -247,7 +227,6 @@ extension UIImage {
     }
 }
 
-// Преобразование CNContact в Contact
 func convertCNContactToContact(_ cnContact: CNContact) -> Contact {
     var birthdayValue: Birthday? = nil
     if let bday = cnContact.birthday {

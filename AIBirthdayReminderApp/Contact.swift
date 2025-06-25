@@ -62,3 +62,8 @@ struct Birthday: Codable, Equatable {
     var month: Int?
     var year: Int? // Optional year
 }
+extension Contact: Hashable {
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}

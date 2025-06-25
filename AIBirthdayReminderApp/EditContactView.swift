@@ -11,8 +11,13 @@ struct EditContactView: View {
     @State private var relation: String
     @State private var gender: String
     @State private var birthday: Birthday?
-    
-    @State private var imageData: Data?
+
+    @State private var pickedImage: UIImage?
+    @State private var pickedEmoji: String?
+    @State private var showAvatarSheet = false
+    @State private var showImagePicker = false
+    @State private var showEmojiPicker = false
+    @State private var showCameraPicker = false
 
     @State private var occupation: String
     @State private var hobbies: String
@@ -26,7 +31,6 @@ struct EditContactView: View {
 
     private var isSaveEnabled: Bool {
         !name.isEmpty
-        // && birthday != nil // Дата рождения теперь необязательна
     }
 
     init(vm: ContactsViewModel, contact: Contact) {
@@ -38,164 +42,210 @@ struct EditContactView: View {
         _relation = State(initialValue: contact.relationType ?? "")
         _gender = State(initialValue: contact.gender ?? "")
         _birthday = State(initialValue: contact.birthday)
-        // если нужно фото:
-        _imageData = State(initialValue: contact.imageData)
         _occupation = State(initialValue: contact.occupation ?? "")
         _hobbies = State(initialValue: contact.hobbies ?? "")
         _leisure = State(initialValue: contact.leisure ?? "")
         _additionalInfo = State(initialValue: contact.additionalInfo ?? "")
+        
+        _pickedImage = State(initialValue: {
+            if let data = contact.imageData, let uiImage = UIImage(data: data) {
+                return uiImage
+            }
+            return nil
+        }())
+        _pickedEmoji = State(initialValue: contact.emoji)
     }
+
 
     var body: some View {
         ZStack {
             LinearGradient(gradient: Gradient(colors: [Color.blue.opacity(0.18), Color.purple.opacity(0.16), Color.teal.opacity(0.14)]), startPoint: .topLeading, endPoint: .bottomTrailing)
                 .ignoresSafeArea()
-            NavigationView {
-                Form {
-                    Section(header: Text("Основная информация")) {
-                        TextField("Имя", text: $name)
-                        TextField("Фамилия (необязательно)", text: $surname)
-                        TextField("Прозвище (необязательно)", text: $nickname)
-                        Picker("Отношения", selection: $relation) {
-                            ForEach(relations, id: \.self) { rel in
-                                Text(rel)
+
+            Form {
+                Section {
+                    VStack(spacing: 6) {
+                        ContactAvatarHeaderView(
+                            contact: Contact(id: UUID(), name: name.isEmpty ? "A" : name, surname: nil, nickname: nil, relationType: nil, gender: nil, birthday: nil, imageData: pickedImage?.jpegData(compressionQuality: 0.8), emoji: pickedEmoji),
+                            pickedImage: pickedImage,
+                            pickedEmoji: pickedEmoji,
+                            headerHeight: 140
+                        ) {
+                            showAvatarSheet = true
+                        }
+
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                showAvatarSheet = true
                             }
+                        }) {
+                            Text("Выбрать аватар")
+                                .font(.callout)
+                                .foregroundStyle(.tint)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 4)
                         }
-                        Picker("Пол", selection: $gender) {
-                            ForEach(genders, id: \.self) { g in
-                                Text(g)
-                            }
-                        }
+                        .buttonStyle(.plain)
                     }
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                    )
-                    Section(header: Text("Дата рождения")){
-                        BirthdayField(birthday: $birthday)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, -12)
+                    .padding(.bottom, 4)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                    .listRowBackground(Color.clear)
+                }
+
+                Section(header: Text("Основная информация")) {
+                    TextField("Имя", text: $name)
+                    TextField("Фамилия (необязательно)", text: $surname)
+                    TextField("Прозвище (необязательно)", text: $nickname)
+                    Picker("Отношения", selection: $relation) {
+                        ForEach(relations, id: \.self) { Text($0) }
                     }
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                    )
-                    Section(header: Text("Род деятельности / Профессия")) {
-                        ZStack(alignment: .topLeading) {
-                            if occupation.isEmpty {
-                                Text("Кем работает / На кого учится, например, инженер, студент, преподаватель, дизайнер…")
-                                    .foregroundColor(.gray.opacity(0.7))
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 8)
-                            }
-                            TextEditor(text: $occupation)
-                                .frame(minHeight: 64)
-                                .font(.body)
-                                .padding(4)
-                        }
-                    }
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                    )
-                    Section(header: Text("Увлечения / Хобби")) {
-                        ZStack(alignment: .topLeading) {
-                            if hobbies.isEmpty {
-                                Text("Например, спорт (футбол, плавание), рыбалка, вязание, фотография, путешествия, коллекционирование…")
-                                    .foregroundColor(.gray.opacity(0.7))
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 8)
-                            }
-                            TextEditor(text: $hobbies)
-                                .frame(minHeight: 64)
-                                .font(.body)
-                                .padding(4)
-                        }
-                    }
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                    )
-                    Section(header: Text("Как любит проводить свободное время")) {
-                        ZStack(alignment: .topLeading) {
-                            if leisure.isEmpty {
-                                Text("Общаться с друзьями, вечеринки, прогулки на свежем воздухе, чтение, гейминг, настольные игры, волонтёрство…")
-                                    .foregroundColor(.gray.opacity(0.7))
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 8)
-                            }
-                            TextEditor(text: $leisure)
-                                .frame(minHeight: 64)
-                                .font(.body)
-                                .padding(4)
-                        }
-                    }
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                    )
-                    Section(header: Text("Дополнительная информация")) {
-                        ZStack(alignment: .topLeading) {
-                            if additionalInfo.isEmpty {
-                                Text("Что-то ещё важное, индивидуальное или необычное…")
-                                    .foregroundColor(.gray.opacity(0.7))
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 8)
-                            }
-                            TextEditor(text: $additionalInfo)
-                                .frame(minHeight: 64)
-                                .font(.body)
-                                .padding(4)
-                        }
-                    }
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                    )
-                    // Если реализуешь выбор фото — вставь сюда PhotoPicker!
-                    if showSaveHint {
-                        Section {
-                            Text("Заполните обязательные поля: имя и дату рождения")
-                                .foregroundColor(.red)
-                                .font(.caption)
-                        }
-                        .listRowBackground(
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .fill(.ultraThinMaterial)
-                                .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                        )
+                    Picker("Пол", selection: $gender) {
+                        ForEach(genders, id: \.self) { Text($0) }
                     }
                 }
-                .scrollDismissesKeyboard(.immediately)
-                .navigationTitle("Редактировать")
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Сохранить") {
-                            if isSaveEnabled {
-                                saveContact()
-                            } else {
-                                withAnimation { showSaveHint = true }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    withAnimation { showSaveHint = false }
-                                }
-                            }
+
+                Section(header: Text("Дата рождения")) {
+                    BirthdayField(birthday: $birthday)
+                }
+
+                Section(header: Text("Род деятельности / Профессия")) {
+                    ZStack(alignment: .topLeading) {
+                        if occupation.isEmpty {
+                            Text("Кем работает / На кого учится…")
+                                .foregroundColor(Color(UIColor.placeholderText))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 8)
                         }
-                        .disabled(!isSaveEnabled)
+                        TextEditor(text: $occupation)
+                            .frame(minHeight: 64)
+                            .font(.body)
                     }
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Отмена") { dismiss() }
+                }
+
+                Section(header: Text("Увлечения / Хобби")) {
+                    ZStack(alignment: .topLeading) {
+                        if hobbies.isEmpty {
+                            Text("Например, спорт, рыбалка, путешествия…")
+                                .foregroundColor(Color(UIColor.placeholderText))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 8)
+                        }
+                        TextEditor(text: $hobbies)
+                            .frame(minHeight: 64)
+                            .font(.body)
+                    }
+                }
+
+                Section(header: Text("Как любит проводить свободное время")) {
+                    ZStack(alignment: .topLeading) {
+                        if leisure.isEmpty {
+                            Text("Прогулки, чтение, игры, волонтёрство…")
+                                .foregroundColor(Color(UIColor.placeholderText))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 8)
+                        }
+                        TextEditor(text: $leisure)
+                            .frame(minHeight: 64)
+                            .font(.body)
+                    }
+                }
+
+                Section(header: Text("Дополнительная информация")) {
+                    ZStack(alignment: .topLeading) {
+                        if additionalInfo.isEmpty {
+                            Text("Что-то ещё важное…")
+                                .foregroundColor(Color(UIColor.placeholderText))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 8)
+                        }
+                        TextEditor(text: $additionalInfo)
+                            .frame(minHeight: 64)
+                            .font(.body)
+                    }
+                }
+
+                if showSaveHint {
+                    Section {
+                        Text("Заполните обязательные поля")
+                            .foregroundColor(.red)
+                            .font(.caption)
                     }
                 }
             }
+            .scrollDismissesKeyboard(.immediately)
+            .navigationTitle("Редактировать")
+            .navigationBarBackButtonHidden(true)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Сохранить") {
+                        if isSaveEnabled {
+                            saveContact()
+                        } else {
+                            withAnimation { showSaveHint = true }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation { showSaveHint = false }
+                            }
+                        }
+                    }
+                    .disabled(!isSaveEnabled)
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Отмена") { dismiss() }
+                }
+            }
+        }
+        .sheet(isPresented: $showAvatarSheet) {
+            AvatarPickerSheet(
+                onCamera: {
+                    showAvatarSheet = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showCameraPicker = true }
+                },
+                onPhoto: {
+                    showAvatarSheet = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showImagePicker = true }
+                },
+                onEmoji: {
+                    showAvatarSheet = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showEmojiPicker = true }
+                },
+                onMonogram: {
+                    showAvatarSheet = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        pickedImage = nil
+                        pickedEmoji = nil
+                    }
+                }
+            )
+            .presentationDetents([.height(225)])
+        }
+        
+        .sheet(isPresented: $showImagePicker) {
+            PhotoPickerWithCrop { image in
+                if let image = image {
+                    pickedImage = image
+                    pickedEmoji = nil
+                }
+                showImagePicker = false
+            }
+        }
+        .sheet(isPresented: $showEmojiPicker) {
+            EmojiPickerView { emoji in
+                if let emoji = emoji {
+                    pickedEmoji = emoji
+                    pickedImage = nil
+                }
+                showEmojiPicker = false
+            }
+        }
+        .fullScreenCover(isPresented: $showCameraPicker) {
+            CameraPicker(image: $pickedImage)
+                .ignoresSafeArea()
         }
     }
 
     private func saveContact() {
-        // guard let b = birthday else { return } // Дата рождения теперь необязательна
         var updated = contact
         updated.name = name
         updated.surname = surname.isEmpty ? nil : surname
@@ -203,8 +253,8 @@ struct EditContactView: View {
         updated.relationType = relation.isEmpty ? nil : relation
         updated.gender = gender.isEmpty ? nil : gender
         updated.birthday = birthday
-        // если используешь фото:
-        updated.imageData = imageData
+        updated.imageData = pickedImage?.jpegData(compressionQuality: 0.8)
+        updated.emoji = pickedEmoji
         updated.occupation = occupation.isEmpty ? nil : occupation
         updated.hobbies = hobbies.isEmpty ? nil : hobbies
         updated.leisure = leisure.isEmpty ? nil : leisure

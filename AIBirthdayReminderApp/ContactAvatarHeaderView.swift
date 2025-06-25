@@ -9,7 +9,7 @@ struct ContactAvatarHeaderView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Spacer().frame(height: 30) // Отступ сверху уменьшен для аккуратного вида
+            Spacer().frame(height: 20) // Отступ сверху уменьшен для аккуратного вида
             Button(action: onTap) {
                 ZStack {
                     Circle()
@@ -71,28 +71,7 @@ struct ContactAvatarHeaderView: View {
             .contentShape(Circle())
             .buttonStyle(.plain)
 
-           
 
-            // Отношение, также вне кнопки
-            /*
-            if let relation = contact.relationType, !relation.isEmpty {
-                Text(relation)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(1)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(Color.white.opacity(0.3))
-                            .blur(radius: 0.5)
-                    )
-                    .padding(.top, 16)
-                    .frame(maxWidth: 360)
-            }
-            */
         }
         .padding(.top, 8)
     }

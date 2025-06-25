@@ -17,6 +17,14 @@ struct AddContactView: View {
     @State private var leisure: String = ""
     @State private var additionalInfo: String = ""
 
+    @State private var pickedImage: UIImage?
+    @State private var pickedEmoji: String?
+    @State private var pickedMonogram: String? = "A"
+    @State private var showAvatarSheet = false
+    @State private var showImagePicker = false
+    @State private var showCameraPicker = false
+    @State private var showEmojiPicker = false
+
     @State private var showSaveHint = false
     @State private var isImporting = false
     @State private var isContactPickerPresented = false
@@ -34,40 +42,59 @@ struct AddContactView: View {
         ZStack {
             LinearGradient(gradient: Gradient(colors: [Color.blue.opacity(0.18), Color.purple.opacity(0.16), Color.teal.opacity(0.14)]), startPoint: .topLeading, endPoint: .bottomTrailing)
                 .ignoresSafeArea()
-            NavigationView {
+            
                 Form {
+                    Section {
+                        VStack(spacing: 6) {
+                            ContactAvatarHeaderView(
+                                contact: Contact(id: UUID(), name: name.isEmpty ? "A" : name, surname: nil, nickname: nil, relationType: nil, gender: nil, birthday: nil, imageData: pickedImage?.jpegData(compressionQuality: 0.8), emoji: pickedEmoji),
+                                pickedImage: pickedImage,
+                                pickedEmoji: pickedEmoji,
+                                headerHeight: 140
+                            ) {
+                                showAvatarSheet = true
+                            }
+
+                            Button(action: {
+                                withAnimation(.easeInOut(duration: 0.15)){
+                                    showAvatarSheet = true
+                                }
+                            }) {
+                                Text("Выбрать аватар")
+                                    .font(.callout)
+                                    .foregroundStyle(.tint)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, -12)
+                        .padding(.bottom, 4)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                        .listRowBackground(Color.clear)
+                    }
+
                     Section(header: Text("Основная информация")) {
                         TextField("Имя", text: $name)
                         TextField("Фамилия (необязательно)", text: $surname)
                         TextField("Прозвище (необязательно)", text: $nickname)
                         Picker("Отношения", selection: $relation) {
-                            ForEach(relations, id: \.self) { rel in
-                                Text(rel)
-                            }
+                            ForEach(relations, id: \.self) { Text($0) }
                         }
                         Picker("Пол", selection: $gender) {
-                            ForEach(genders, id: \.self) { g in
-                                Text(g)
-                            }
+                            ForEach(genders, id: \.self) { Text($0) }
                         }
                     }
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                    )
+                    
                     Section(header: Text("Дата рождения")) {
                         BirthdayField(birthday: $birthday)
                     }
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                    )
+                    
                     Section(header: Text("Род деятельности / Профессия")) {
                         ZStack(alignment: .topLeading) {
                             if occupation.isEmpty {
-                                Text("Кем работает / На кого учится, например, инженер, студент, преподаватель, дизайнер…")
+                                Text("Кем работает / На кого учится…")
                                     .foregroundColor(Color(UIColor.placeholderText))
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 8)
@@ -75,18 +102,15 @@ struct AddContactView: View {
                             TextEditor(text: $occupation)
                                 .frame(minHeight: 64)
                                 .font(.body)
-                                .padding(4)
+                                
                         }
                     }
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                    )
+                    
+
                     Section(header: Text("Увлечения / Хобби")) {
                         ZStack(alignment: .topLeading) {
                             if hobbies.isEmpty {
-                                Text("Например, спорт (футбол, плавание), рыбалка, вязание, фотография, путешествия, коллекционирование…")
+                                Text("Например, спорт, рыбалка, путешествия…")
                                     .foregroundColor(Color(UIColor.placeholderText))
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 8)
@@ -94,18 +118,15 @@ struct AddContactView: View {
                             TextEditor(text: $hobbies)
                                 .frame(minHeight: 64)
                                 .font(.body)
-                                .padding(4)
+                                
                         }
                     }
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                    )
+                    
+
                     Section(header: Text("Как любит проводить свободное время")) {
                         ZStack(alignment: .topLeading) {
                             if leisure.isEmpty {
-                                Text("Общаться с друзьями, вечеринки, прогулки на свежем воздухе, чтение, гейминг, настольные игры, волонтёрство…")
+                                Text("Прогулки, чтение, игры, волонтёрство…")
                                     .foregroundColor(Color(UIColor.placeholderText))
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 8)
@@ -113,18 +134,15 @@ struct AddContactView: View {
                             TextEditor(text: $leisure)
                                 .frame(minHeight: 64)
                                 .font(.body)
-                                .padding(4)
+                                
                         }
                     }
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                    )
+                    
+
                     Section(header: Text("Дополнительная информация")) {
                         ZStack(alignment: .topLeading) {
                             if additionalInfo.isEmpty {
-                                Text("Что-то ещё важное, индивидуальное или необычное…")
+                                Text("Что-то ещё важное…")
                                     .foregroundColor(Color(UIColor.placeholderText))
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 8)
@@ -132,34 +150,24 @@ struct AddContactView: View {
                             TextEditor(text: $additionalInfo)
                                 .frame(minHeight: 64)
                                 .font(.body)
-                                .padding(4)
+                                
+                                
                         }
                     }
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                    )
                     
+
                     Section {
-                        Button(action: {
+                        Button {
                             isContactPickerPresented = true
-                        }) {
-                            HStack {
-                                Image(systemName: "person.crop.circle.badge.plus")
-                                Text("Импортировать из Контактов")
-                            }
+                        } label: {
+                            Label("Импортировать из Контактов", systemImage: "person.crop.circle.badge.plus")
                         }
                     }
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
-                    )
                     
                 }
                 .scrollDismissesKeyboard(.immediately)
                 .navigationTitle("Добавить контакт")
+                .navigationBarBackButtonHidden(true)
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button("Сохранить") {
@@ -179,19 +187,64 @@ struct AddContactView: View {
                     }
                 }
             }
+        
+        .sheet(isPresented: $showAvatarSheet) {
+            AvatarPickerSheet(
+                onCamera: {
+                    showAvatarSheet = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showCameraPicker = true }
+                },
+                onPhoto: {
+                    showAvatarSheet = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showImagePicker = true }
+                },
+                onEmoji: {
+                    showAvatarSheet = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showEmojiPicker = true }
+                },
+                onMonogram: {
+                    showAvatarSheet = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        pickedImage = nil
+                        pickedEmoji = nil
+                        pickedMonogram = "A"
+                    }
+                }
+            )
+            .presentationDetents([.height(225)])
+        }
+        .sheet(isPresented: $showImagePicker) {
+            PhotoPickerWithCrop { image in
+                if let image = image {
+                    pickedImage = image
+                    pickedEmoji = nil
+                    pickedMonogram = ""
+                }
+                showImagePicker = false
+            }
+        }
+        .sheet(isPresented: $showEmojiPicker) {
+            EmojiPickerView { emoji in
+                if let emoji = emoji {
+                    pickedEmoji = emoji
+                    pickedImage = nil
+                    pickedMonogram = ""
+                }
+                showEmojiPicker = false
+            }
+        }
+        .fullScreenCover(isPresented: $showCameraPicker) {
+            CameraPicker(image: $pickedImage)
+                .ignoresSafeArea()
         }
         .sheet(isPresented: $isContactPickerPresented) {
-            ContactPickerView { importedCNContact in
-                let importedContact = convertCNContactToContact(importedCNContact)
-                if !vm.contacts.contains(where: { 
-                    $0.name == importedContact.name && 
-                    $0.surname == importedContact.surname && 
-                    $0.birthday == importedContact.birthday 
-                }) {
-                    vm.addContact(importedContact)
-                    importAlertMessage = "Контакт \"\(importedContact.name)\" успешно добавлен."
+            ContactPickerView { cnContact in
+                let imported = convertCNContactToContact(cnContact)
+                if !vm.contacts.contains(where: { $0.name == imported.name && $0.surname == imported.surname && $0.birthday == imported.birthday }) {
+                    vm.addContact(imported)
+                    importAlertMessage = "Контакт \"\(imported.name)\" успешно добавлен."
                 } else {
-                    importAlertMessage = "Контакт \"\(importedContact.name)\" уже существует."
+                    importAlertMessage = "Контакт \"\(imported.name)\" уже существует."
                 }
                 showImportAlert = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -214,6 +267,9 @@ struct AddContactView: View {
             relationType: relation.isEmpty ? nil : relation,
             gender: gender.isEmpty ? nil : gender,
             birthday: birthday,
+            notificationSettings: .default,
+            imageData: pickedImage?.jpegData(compressionQuality: 0.8),
+            emoji: pickedEmoji,
             occupation: occupation.isEmpty ? nil : occupation,
             hobbies: hobbies.isEmpty ? nil : hobbies,
             leisure: leisure.isEmpty ? nil : leisure,
@@ -223,39 +279,26 @@ struct AddContactView: View {
         dismiss()
     }
 
-    func convertCNContactToContact(_ cnContact: CNContact) -> Contact {
-        var birthdayValue: Birthday? = nil
-        if let bday = cnContact.birthday {
-            birthdayValue = Birthday(
-                day: bday.day ?? 0,
-                month: bday.month ?? 0,
-                year: bday.year
-            )
+    private func convertCNContactToContact(_ cn: CNContact) -> Contact {
+        var bday: Birthday? = nil
+        if let d = cn.birthday {
+            bday = Birthday(day: d.day ?? 0, month: d.month ?? 0, year: d.year)
         }
-
         return Contact(
             id: UUID(),
-            name: cnContact.givenName,
-            surname: cnContact.familyName.isEmpty ? nil : cnContact.familyName,
-            nickname: cnContact.nickname.isEmpty ? nil : cnContact.nickname,
+            name: cn.givenName,
+            surname: cn.familyName.isEmpty ? nil : cn.familyName,
+            nickname: cn.nickname.isEmpty ? nil : cn.nickname,
             relationType: nil,
             gender: nil,
-            birthday: (birthdayValue?.day == 0 && birthdayValue?.month == 0 && birthdayValue?.year == nil) ? nil : birthdayValue,
+            birthday: bday,
             notificationSettings: .default,
-            imageData: cnContact.imageData,
+            imageData: cn.imageData,
             emoji: nil,
-            occupation: cnContact.jobTitle.isEmpty ? nil : cnContact.jobTitle,
+            occupation: cn.jobTitle.isEmpty ? nil : cn.jobTitle,
             hobbies: nil,
             leisure: nil,
             additionalInfo: nil
         )
-    }
-}
-
-extension View {
-    func getRootViewController() -> UIViewController? {
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let root = scene.windows.first?.rootViewController else { return nil }
-        return root
     }
 }
