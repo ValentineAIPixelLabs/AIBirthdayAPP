@@ -11,7 +11,7 @@ struct EditContactView: View {
     @State private var relation: String
     @State private var gender: String
     @State private var birthday: Birthday?
-    // Если используешь imageData — добавь:
+    
     @State private var imageData: Data?
 
     @State private var occupation: String
@@ -72,35 +72,8 @@ struct EditContactView: View {
                             .fill(.ultraThinMaterial)
                             .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
                     )
-                    Section(header: Text("Дата рождения")) {
-                        DatePicker(
-                            "Дата рождения",
-                            selection: Binding(
-                                get: {
-                                    if let birthday = birthday {
-                                        // Преобразуем Birthday в Date (пример для года, месяца и дня, игнорируя время)
-                                        var comps = DateComponents()
-                                        comps.year = birthday.year
-                                        comps.month = birthday.month
-                                        comps.day = birthday.day
-                                        return Calendar.current.date(from: comps) ?? Date()
-                                    } else {
-                                        // Дата по умолчанию (например, сегодня) - не важна, пользователь может очистить
-                                        return Date()
-                                    }
-                                },
-                                set: { newDate in
-                                    let comps = Calendar.current.dateComponents([.year, .month, .day], from: newDate)
-                                    birthday = Birthday(day: comps.day ?? 1, month: comps.month ?? 1, year: comps.year ?? 2000)
-                                }
-                            ),
-                            displayedComponents: [.date]
-                        )
-                        // Кнопка для очистки даты рождения
-                        Button("Очистить дату рождения") {
-                            birthday = nil
-                        }
-                        .foregroundColor(.red)
+                    Section(header: Text("Дата рождения")){
+                        BirthdayField(birthday: $birthday)
                     }
                     .listRowBackground(
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
