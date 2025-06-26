@@ -448,7 +448,7 @@ struct ContactDetailView: View {
                         Circle()
                             .fill(.ultraThinMaterial)
                             .frame(width: buttonSize, height: buttonSize)
-                            .shadow(radius: 6)
+                            .shadow(color: Color.black.opacity(0.3), radius: 3, x: 0, y: 1)
                         Image(systemName: "sparkles")
                             .font(.title)
                             .foregroundColor(.yellow)
@@ -499,11 +499,11 @@ struct ContactDetailView: View {
                         Circle()
                             .fill(.ultraThinMaterial)
                             .frame(width: buttonSize, height: buttonSize)
-                            .shadow(radius: 6)
+                            .shadow(color: Color.black.opacity(0.3), radius: 3, x: 0, y: 1)
                         Image(systemName: "photo.on.rectangle.angled")
                             .font(.title)
                             .foregroundColor(.teal)
-                    }
+                    } 
                 }
                 .buttonStyle(ActionButtonStyle())
                 Text("Генерация\nоткрытки")
@@ -580,7 +580,10 @@ struct ContactDetailView: View {
                 Image(systemName: "chevron.backward")
                     .font(.system(size: 20, weight: .semibold))
                     .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial.opacity(0.9), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    .background(
+                        Circle().fill(Color.white.opacity(0.3))
+                            .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
+                            )
             }
             Spacer()
             Button(action: {
@@ -591,7 +594,10 @@ struct ContactDetailView: View {
                 Image(systemName: "pencil")
                     .font(.system(size: 20, weight: .semibold))
                     .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial.opacity(0.9), in: RoundedRectangle(cornerRadius: 15))
+                    .background(
+                        Circle().fill(Color.white.opacity(0.3))
+                            .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
+                            )
             }
         }
         .padding(.horizontal, 12)

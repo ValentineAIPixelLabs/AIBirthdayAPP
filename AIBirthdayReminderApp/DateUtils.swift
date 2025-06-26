@@ -39,7 +39,7 @@ func birthdayDateDetails(for birthday: Birthday?) -> String {
 
     let dateFormatter = DateFormatter()
     dateFormatter.locale = Locale(identifier: "ru_RU")
-    dateFormatter.dateFormat = "d MMMM yyyy"
+    dateFormatter.dateFormat = "d MMMM"
     let dateText = dateFormatter.string(from: next)
 
     let weekdayFormatter = DateFormatter()
@@ -47,13 +47,17 @@ func birthdayDateDetails(for birthday: Birthday?) -> String {
     weekdayFormatter.dateFormat = "EEEE"
     let weekday = weekdayFormatter.string(from: next).capitalized
 
+    let prefix: String
     if days == 0 {
-        return "Сегодня · \(dateText), \(weekday)"
+        prefix = "Сегодня"
     } else if days == 1 {
-        return "Завтра · \(dateText), \(weekday)"
+        prefix = "Завтра"
     } else {
-        return "Через \(days) \(daysSuffix(for: days)) · \(dateText), \(weekday)"
+        prefix = "Через \(days) \(daysSuffix(for: days))"
     }
+
+    // Две строки: первая — день, вторая — день недели (жирным стилем вывод можно сделать уже в UI)
+    return "\(prefix) · \(dateText)\n\(weekday)"
 }
 
 func ageOnNextBirthday(contact: Contact) -> Int {

@@ -1,3 +1,4 @@
+// Для работы секций необходим файл BirthdaySection.swift с реализацией BirthdaySectionsViewModel
 import Contacts
 import SwiftUI
 import Foundation
@@ -57,9 +58,15 @@ struct ContactCardView: View {
                     .font(.footnote)
                     .foregroundColor(.secondary)
                     .opacity(0.96)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                
             }
             Spacer()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        
         .padding()
         .cardStyle()
         .padding(.horizontal, 20)
@@ -83,7 +90,10 @@ struct TopBarView: View {
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(.accentColor)
                     .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(
+                        Circle().fill(Color.white.opacity(0.3))
+                            .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
+                            )
             }
             .buttonStyle(ActionButtonStyle())
             Spacer(minLength: 8)
@@ -92,7 +102,10 @@ struct TopBarView: View {
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(.accentColor)
                     .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(
+                        Circle().fill(Color.white.opacity(0.3))
+                        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
+                            )
             }
             .buttonStyle(ActionButtonStyle())
         }
@@ -126,27 +139,41 @@ struct ContentView: View {
         )
     }
 
-    private var contactList: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(spacing: 10) {
-                ForEach(vm.sortedContacts) { contact in
-                    NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
-                        ContactCardView(contact: contact)
-                            .scaleEffect(highlightedContactID == contact.id ? 0.95 : 1.0)
-                            .animation(.spring(response: 0.2, dampingFraction: 0.6), value: highlightedContactID)
-                    }
-                    .simultaneousGesture(
-                        LongPressGesture(minimumDuration: 0.55)
-                            .onEnded { _ in
-                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                highlightedContactID = contact.id
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.17) {
-                                    contactToDelete = contact
-                                    showDeleteAlert = true
-                                    highlightedContactID = nil
-                                }
+    // Для работы секций необходим файл BirthdaySection.swift с реализацией BirthdaySectionsViewModel
+    private var sectionedContactList: some View {
+        let sectionedVM = BirthdaySectionsViewModel(contacts: vm.sortedContacts)
+        let sections = sectionedVM.sectionedContacts()
+        
+        return ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                ForEach(sections, id: \.section) { section in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(sectionedVM.sectionTitle(section.section))
+                            .font(.callout).bold()
+                            .foregroundColor(.primary)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
+                        
+                        ForEach(section.contacts) { contact in
+                            NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
+                                ContactCardView(contact: contact)
+                                    .scaleEffect(highlightedContactID == contact.id ? 0.95 : 1.0)
+                                    .animation(.spring(response: 0.2, dampingFraction: 0.6), value: highlightedContactID)
                             }
-                    )
+                            .simultaneousGesture(
+                                LongPressGesture(minimumDuration: 0.55)
+                                    .onEnded { _ in
+                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                        highlightedContactID = contact.id
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.17) {
+                                            contactToDelete = contact
+                                            showDeleteAlert = true
+                                            highlightedContactID = nil
+                                        }
+                                    }
+                            )
+                        }
+                    }
                 }
             }
             .padding(.top, 20)
@@ -163,7 +190,7 @@ struct ContentView: View {
                         path.append("add")
                     }
                     
-                    contactList
+                    sectionedContactList
                 }
             }
             .navigationBarHidden(true)
