@@ -16,6 +16,7 @@ struct AddContactView: View {
     @State private var hobbies: String = ""
     @State private var leisure: String = ""
     @State private var additionalInfo: String = ""
+    @State private var phoneNumber: String = "" // Новое поле
 
     @State private var pickedImage: UIImage?
     @State private var pickedEmoji: String?
@@ -30,6 +31,8 @@ struct AddContactView: View {
     @State private var isContactPickerPresented = false
     @State private var showImportAlert = false
     @State private var importAlertMessage = ""
+    @State private var showPhonePickerAlert = false
+    @State private var phoneNumbersFromContact: [String] = []
 
     private let relations = ["Брат", "Сестра", "Отец", "Мать", "Бабушка", "Дедушка", "Сын", "Дочь", "Коллега", "Руководитель", "Начальник", "Товарищ", "Друг", "Лучший друг", "Супруг", "Супруга", "Партнер", "Девушка", "Парень", "Клиент"]
     private let genders = ["Мужской", "Женский"]
@@ -43,151 +46,142 @@ struct AddContactView: View {
             LinearGradient(gradient: Gradient(colors: [Color.blue.opacity(0.18), Color.purple.opacity(0.16), Color.teal.opacity(0.14)]), startPoint: .topLeading, endPoint: .bottomTrailing)
                 .ignoresSafeArea()
             
-                Form {
-                    Section {
-                        VStack(spacing: 6) {
-                            ContactAvatarHeaderView(
-                                contact: Contact(id: UUID(), name: name.isEmpty ? "A" : name, surname: nil, nickname: nil, relationType: nil, gender: nil, birthday: nil, imageData: pickedImage?.jpegData(compressionQuality: 0.8), emoji: pickedEmoji),
-                                pickedImage: pickedImage,
-                                pickedEmoji: pickedEmoji,
-                                headerHeight: 140
-                            ) {
+            Form {
+                Section {
+                    VStack(spacing: 6) {
+                        ContactAvatarHeaderView(
+                            contact: Contact(id: UUID(), name: name.isEmpty ? "A" : name, surname: nil, nickname: nil, relationType: nil, gender: nil, birthday: nil, imageData: pickedImage?.jpegData(compressionQuality: 0.8), emoji: pickedEmoji),
+                            pickedImage: pickedImage,
+                            pickedEmoji: pickedEmoji,
+                            headerHeight: 140
+                        ) {
+                            showAvatarSheet = true
+                        }
+
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.15)){
                                 showAvatarSheet = true
                             }
-
-                            Button(action: {
-                                withAnimation(.easeInOut(duration: 0.15)){
-                                    showAvatarSheet = true
-                                }
-                            }) {
-                                Text("Выбрать аватар")
-                                    .font(.callout)
-                                    .foregroundStyle(.tint)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 4)
-                            }
-                            .buttonStyle(.plain)
+                        }) {
+                            Text("Выбрать аватар")
+                                .font(.callout)
+                                .foregroundStyle(.tint)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 4)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, -12)
-                        .padding(.bottom, 4)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                        .listRowBackground(Color.clear)
+                        .buttonStyle(.plain)
                     }
-
-                    Section(header: Text("Основная информация")) {
-                        TextField("Имя", text: $name)
-                        TextField("Фамилия (необязательно)", text: $surname)
-                        TextField("Прозвище (необязательно)", text: $nickname)
-                        Picker("Отношения", selection: $relation) {
-                            ForEach(relations, id: \.self) { Text($0) }
-                        }
-                        Picker("Пол", selection: $gender) {
-                            ForEach(genders, id: \.self) { Text($0) }
-                        }
-                    }
-                    
-                    Section(header: Text("Дата рождения")) {
-                        BirthdayField(birthday: $birthday)
-                    }
-                    
-                    Section(header: Text("Род деятельности / Профессия")) {
-                        ZStack(alignment: .topLeading) {
-                            if occupation.isEmpty {
-                                Text("Кем работает / На кого учится…")
-                                    .foregroundColor(Color(UIColor.placeholderText))
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 8)
-                            }
-                            TextEditor(text: $occupation)
-                                .frame(minHeight: 64)
-                                .font(.body)
-                                
-                        }
-                    }
-                    
-
-                    Section(header: Text("Увлечения / Хобби")) {
-                        ZStack(alignment: .topLeading) {
-                            if hobbies.isEmpty {
-                                Text("Например, спорт, рыбалка, путешествия…")
-                                    .foregroundColor(Color(UIColor.placeholderText))
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 8)
-                            }
-                            TextEditor(text: $hobbies)
-                                .frame(minHeight: 64)
-                                .font(.body)
-                                
-                        }
-                    }
-                    
-
-                    Section(header: Text("Как любит проводить свободное время")) {
-                        ZStack(alignment: .topLeading) {
-                            if leisure.isEmpty {
-                                Text("Прогулки, чтение, игры, волонтёрство…")
-                                    .foregroundColor(Color(UIColor.placeholderText))
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 8)
-                            }
-                            TextEditor(text: $leisure)
-                                .frame(minHeight: 64)
-                                .font(.body)
-                                
-                        }
-                    }
-                    
-
-                    Section(header: Text("Дополнительная информация")) {
-                        ZStack(alignment: .topLeading) {
-                            if additionalInfo.isEmpty {
-                                Text("Что-то ещё важное…")
-                                    .foregroundColor(Color(UIColor.placeholderText))
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 8)
-                            }
-                            TextEditor(text: $additionalInfo)
-                                .frame(minHeight: 64)
-                                .font(.body)
-                                
-                                
-                        }
-                    }
-                    
-
-                    Section {
-                        Button {
-                            isContactPickerPresented = true
-                        } label: {
-                            Label("Импортировать из Контактов", systemImage: "person.crop.circle.badge.plus")
-                        }
-                    }
-                    
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, -12)
+                    .padding(.bottom, 4)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                    .listRowBackground(Color.clear)
                 }
-                .scrollDismissesKeyboard(.immediately)
-                .navigationTitle("Добавить контакт")
-                .navigationBarBackButtonHidden(true)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Сохранить") {
-                            if isSaveEnabled {
-                                saveContact()
-                            } else {
-                                withAnimation { showSaveHint = true }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    withAnimation { showSaveHint = false }
-                                }
-                            }
-                        }
-                        .disabled(!isSaveEnabled)
+
+                Section(header: Text("Основная информация")) {
+                    TextField("Имя", text: $name)
+                    TextField("Фамилия (необязательно)", text: $surname)
+                    TextField("Прозвище (необязательно)", text: $nickname)
+                    Picker("Отношения", selection: $relation) {
+                        ForEach(relations, id: \.self) { Text($0) }
                     }
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Отмена") { dismiss() }
+                    Picker("Пол", selection: $gender) {
+                        ForEach(genders, id: \.self) { Text($0) }
+                    }
+                    TextField("Телефон", text: $phoneNumber)
+                        .keyboardType(.phonePad)
+                }
+                
+                Section(header: Text("Дата рождения")) {
+                    BirthdayField(birthday: $birthday)
+                }
+                
+                Section(header: Text("Род деятельности / Профессия")) {
+                    ZStack(alignment: .topLeading) {
+                        if occupation.isEmpty {
+                            Text("Кем работает / На кого учится…")
+                                .foregroundColor(Color(UIColor.placeholderText))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 8)
+                        }
+                        TextEditor(text: $occupation)
+                            .frame(minHeight: 64)
+                            .font(.body)
+                    }
+                }
+
+                Section(header: Text("Увлечения / Хобби")) {
+                    ZStack(alignment: .topLeading) {
+                        if hobbies.isEmpty {
+                            Text("Например, спорт, рыбалка, путешествия…")
+                                .foregroundColor(Color(UIColor.placeholderText))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 8)
+                        }
+                        TextEditor(text: $hobbies)
+                            .frame(minHeight: 64)
+                            .font(.body)
+                    }
+                }
+
+                Section(header: Text("Как любит проводить свободное время")) {
+                    ZStack(alignment: .topLeading) {
+                        if leisure.isEmpty {
+                            Text("Прогулки, чтение, игры, волонтёрство…")
+                                .foregroundColor(Color(UIColor.placeholderText))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 8)
+                        }
+                        TextEditor(text: $leisure)
+                            .frame(minHeight: 64)
+                            .font(.body)
+                    }
+                }
+
+                Section(header: Text("Дополнительная информация")) {
+                    ZStack(alignment: .topLeading) {
+                        if additionalInfo.isEmpty {
+                            Text("Что-то ещё важное…")
+                                .foregroundColor(Color(UIColor.placeholderText))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 8)
+                        }
+                        TextEditor(text: $additionalInfo)
+                            .frame(minHeight: 64)
+                            .font(.body)
+                    }
+                }
+
+                Section {
+                    Button {
+                        isContactPickerPresented = true
+                    } label: {
+                        Label("Импортировать из Контактов", systemImage: "person.crop.circle.badge.plus")
                     }
                 }
             }
-        
+            .scrollDismissesKeyboard(.immediately)
+            .navigationTitle("Добавить контакт")
+            .navigationBarBackButtonHidden(true)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Сохранить") {
+                        if isSaveEnabled {
+                            saveContact()
+                        } else {
+                            withAnimation { showSaveHint = true }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation { showSaveHint = false }
+                            }
+                        }
+                    }
+                    .disabled(!isSaveEnabled)
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Отмена") { dismiss() }
+                }
+            }
+        }
         .sheet(isPresented: $showAvatarSheet) {
             AvatarPickerSheet(
                 onCamera: {
@@ -240,8 +234,30 @@ struct AddContactView: View {
         .sheet(isPresented: $isContactPickerPresented) {
             ContactPickerView { cnContact in
                 let imported = convertCNContactToContact(cnContact)
+
+                // Телефоны
+                let numbers = cnContact.phoneNumbers.map { $0.value.stringValue }
+                if !numbers.isEmpty {
+                    if numbers.count == 1 {
+                        phoneNumber = numbers[0]
+                    } else {
+                        phoneNumbersFromContact = numbers
+                        showPhonePickerAlert = true
+                    }
+                }
+
+                // Остальная логика (аналогично выше)
                 if !vm.contacts.contains(where: { $0.name == imported.name && $0.surname == imported.surname && $0.birthday == imported.birthday }) {
-                    vm.addContact(imported)
+                    name = imported.name
+                    surname = imported.surname ?? ""
+                    nickname = imported.nickname ?? ""
+                    birthday = imported.birthday
+                    occupation = imported.occupation ?? ""
+                    if let imageData = imported.imageData, !imageData.isEmpty {
+                        pickedImage = UIImage(data: imageData)
+                        pickedEmoji = nil
+                        pickedMonogram = ""
+                    }
                     importAlertMessage = "Контакт \"\(imported.name)\" успешно добавлен."
                 } else {
                     importAlertMessage = "Контакт \"\(imported.name)\" уже существует."
@@ -255,6 +271,17 @@ struct AddContactView: View {
         }
         .alert(isPresented: $showImportAlert) {
             Alert(title: Text("Импорт контакта"), message: Text(importAlertMessage), dismissButton: .default(Text("Ок")))
+        }
+        .actionSheet(isPresented: $showPhonePickerAlert) {
+            ActionSheet(
+                title: Text("Выберите номер"),
+                message: nil,
+                buttons: phoneNumbersFromContact.map { number in
+                    .default(Text(number)) {
+                        phoneNumber = number
+                    }
+                } + [.cancel()]
+            )
         }
     }
 
@@ -273,7 +300,8 @@ struct AddContactView: View {
             occupation: occupation.isEmpty ? nil : occupation,
             hobbies: hobbies.isEmpty ? nil : hobbies,
             leisure: leisure.isEmpty ? nil : leisure,
-            additionalInfo: additionalInfo.isEmpty ? nil : additionalInfo
+            additionalInfo: additionalInfo.isEmpty ? nil : additionalInfo,
+            phoneNumber: phoneNumber.isEmpty ? nil : phoneNumber
         )
         vm.addContact(contact)
         dismiss()
@@ -284,6 +312,7 @@ struct AddContactView: View {
         if let d = cn.birthday {
             bday = Birthday(day: d.day ?? 0, month: d.month ?? 0, year: d.year)
         }
+        let phone = cn.phoneNumbers.first?.value.stringValue
         return Contact(
             id: UUID(),
             name: cn.givenName,
@@ -298,7 +327,8 @@ struct AddContactView: View {
             occupation: cn.jobTitle.isEmpty ? nil : cn.jobTitle,
             hobbies: nil,
             leisure: nil,
-            additionalInfo: nil
+            additionalInfo: nil,
+            phoneNumber: phone
         )
     }
 }

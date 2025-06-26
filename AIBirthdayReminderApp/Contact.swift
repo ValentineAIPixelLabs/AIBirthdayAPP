@@ -30,6 +30,7 @@ struct Contact: Identifiable, Codable, Equatable {
     var hobbies: String?
     var leisure: String?
     var additionalInfo: String?
+    var phoneNumber: String?
     
     var age: Int? {
         guard let birthday = birthday, let year = birthday.year else { return nil }

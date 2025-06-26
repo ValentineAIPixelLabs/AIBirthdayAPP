@@ -1,4 +1,5 @@
 import SwiftUI
+import Contacts
 
 struct EditContactView: View {
     @Environment(\.dismiss) var dismiss
@@ -12,6 +13,12 @@ struct EditContactView: View {
     @State private var gender: String
     @State private var birthday: Birthday?
 
+    @State private var occupation: String
+    @State private var hobbies: String
+    @State private var leisure: String
+    @State private var additionalInfo: String
+    @State private var phoneNumber: String
+
     @State private var pickedImage: UIImage?
     @State private var pickedEmoji: String?
     @State private var showAvatarSheet = false
@@ -19,12 +26,13 @@ struct EditContactView: View {
     @State private var showEmojiPicker = false
     @State private var showCameraPicker = false
 
-    @State private var occupation: String
-    @State private var hobbies: String
-    @State private var leisure: String
-    @State private var additionalInfo: String
-
     @State private var showSaveHint = false
+
+    @State private var isContactPickerPresented = false
+    @State private var showImportAlert = false
+    @State private var importAlertMessage = ""
+    @State private var showPhonePickerAlert = false
+    @State private var phoneNumbersFromContact: [String] = []
 
     private let relations = ["Брат", "Сестра", "Отец", "Мать", "Бабушка", "Дедушка", "Сын", "Дочь", "Коллега", "Руководитель", "Начальник", "Товарищ", "Друг", "Лучший друг", "Супруг", "Супруга", "Партнер", "Девушка", "Парень", "Клиент"]
     private let genders = ["Мужской", "Женский"]
@@ -46,7 +54,8 @@ struct EditContactView: View {
         _hobbies = State(initialValue: contact.hobbies ?? "")
         _leisure = State(initialValue: contact.leisure ?? "")
         _additionalInfo = State(initialValue: contact.additionalInfo ?? "")
-        
+        _phoneNumber = State(initialValue: contact.phoneNumber ?? "")
+
         _pickedImage = State(initialValue: {
             if let data = contact.imageData, let uiImage = UIImage(data: data) {
                 return uiImage
@@ -55,7 +64,6 @@ struct EditContactView: View {
         }())
         _pickedEmoji = State(initialValue: contact.emoji)
     }
-
 
     var body: some View {
         ZStack {
@@ -66,7 +74,7 @@ struct EditContactView: View {
                 Section {
                     VStack(spacing: 6) {
                         ContactAvatarHeaderView(
-                            contact: Contact(id: UUID(), name: name.isEmpty ? "A" : name, surname: nil, nickname: nil, relationType: nil, gender: nil, birthday: nil, imageData: pickedImage?.jpegData(compressionQuality: 0.8), emoji: pickedEmoji),
+                            contact: Contact(id: contact.id, name: name.isEmpty ? "A" : name, surname: nil, nickname: nil, relationType: nil, gender: nil, birthday: nil, imageData: pickedImage?.jpegData(compressionQuality: 0.8), emoji: pickedEmoji),
                             pickedImage: pickedImage,
                             pickedEmoji: pickedEmoji,
                             headerHeight: 140
@@ -104,6 +112,8 @@ struct EditContactView: View {
                     Picker("Пол", selection: $gender) {
                         ForEach(genders, id: \.self) { Text($0) }
                     }
+                    TextField("Телефон", text: $phoneNumber)
+                        .keyboardType(.phonePad)
                 }
 
                 Section(header: Text("Дата рождения")) {
@@ -166,6 +176,14 @@ struct EditContactView: View {
                     }
                 }
 
+                Section {
+                    Button {
+                        isContactPickerPresented = true
+                    } label: {
+                        Label("Импортировать из Контактов", systemImage: "person.crop.circle.badge.plus")
+                    }
+                }
+
                 if showSaveHint {
                     Section {
                         Text("Заполните обязательные поля")
@@ -220,7 +238,6 @@ struct EditContactView: View {
             )
             .presentationDetents([.height(225)])
         }
-        
         .sheet(isPresented: $showImagePicker) {
             PhotoPickerWithCrop { image in
                 if let image = image {
@@ -243,6 +260,89 @@ struct EditContactView: View {
             CameraPicker(image: $pickedImage)
                 .ignoresSafeArea()
         }
+        .sheet(isPresented: $isContactPickerPresented) {
+            ContactPickerView { cnContact in
+                let imported = convertCNContactToContact(cnContact)
+                // Сбор всех телефонов для выбора
+                let numbers = cnContact.phoneNumbers.map { $0.value.stringValue }
+                if !numbers.isEmpty {
+                    if numbers.count == 1 {
+                        phoneNumber = numbers[0]
+                    } else {
+                        phoneNumbersFromContact = numbers
+                        showPhonePickerAlert = true
+                    }
+                }
+                // Остальные поля по приоритету:
+                var didUpdate = false
+                if !imported.name.isEmpty {
+                    if name != imported.name {
+                        name = imported.name
+                        didUpdate = true
+                    }
+                }
+                if let importedSurname = imported.surname, !importedSurname.isEmpty {
+                    if surname != importedSurname {
+                        surname = importedSurname
+                        didUpdate = true
+                    }
+                }
+                if let importedNickname = imported.nickname, !importedNickname.isEmpty {
+                    if nickname != importedNickname {
+                        nickname = importedNickname
+                        didUpdate = true
+                    }
+                }
+                if let importedBirthday = imported.birthday {
+                    if birthday != importedBirthday {
+                        birthday = importedBirthday
+                        didUpdate = true
+                    }
+                }
+                if let importedOccupation = imported.occupation, !importedOccupation.isEmpty {
+                    if occupation != importedOccupation {
+                        occupation = importedOccupation
+                        didUpdate = true
+                    }
+                }
+                if let imageData = imported.imageData, !imageData.isEmpty {
+                    if pickedImage?.jpegData(compressionQuality: 0.8) != imageData {
+                        pickedImage = UIImage(data: imageData)
+                        pickedEmoji = nil
+                        didUpdate = true
+                    }
+                }
+                if let importedPhone = imported.phoneNumber, !importedPhone.isEmpty {
+                    if phoneNumber != importedPhone {
+                        phoneNumber = importedPhone
+                        didUpdate = true
+                    }
+                }
+                if didUpdate {
+                    importAlertMessage = "Данные обновлены из Контактов."
+                } else {
+                    importAlertMessage = "Контакт не изменился."
+                }
+                showImportAlert = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    isContactPickerPresented = false
+                }
+            }
+        }
+        .alert(isPresented: $showImportAlert) {
+            Alert(title: Text("Импорт контакта"), message: Text(importAlertMessage), dismissButton: .default(Text("Ок")))
+        }
+        .actionSheet(isPresented: $showPhonePickerAlert) {
+            ActionSheet(
+                title: Text("Выберите номер"),
+                message: nil,
+                buttons: phoneNumbersFromContact.map { number in
+                    .default(Text(number)) {
+                        phoneNumber = number
+                    }
+                } + [.cancel()]
+            )
+        }
     }
 
     private func saveContact() {
@@ -259,8 +359,34 @@ struct EditContactView: View {
         updated.hobbies = hobbies.isEmpty ? nil : hobbies
         updated.leisure = leisure.isEmpty ? nil : leisure
         updated.additionalInfo = additionalInfo.isEmpty ? nil : additionalInfo
+        updated.phoneNumber = phoneNumber.isEmpty ? nil : phoneNumber
         vm.updateContact(updated)
         NotificationManager.shared.scheduleBirthdayNotifications(for: updated, settings: vm.globalNotificationSettings)
         dismiss()
+    }
+
+    private func convertCNContactToContact(_ cn: CNContact) -> Contact {
+        var bday: Birthday? = nil
+        if let d = cn.birthday {
+            bday = Birthday(day: d.day ?? 0, month: d.month ?? 0, year: d.year)
+        }
+        let phone = cn.phoneNumbers.first?.value.stringValue
+        return Contact(
+            id: UUID(),
+            name: cn.givenName,
+            surname: cn.familyName.isEmpty ? nil : cn.familyName,
+            nickname: cn.nickname.isEmpty ? nil : cn.nickname,
+            relationType: nil,
+            gender: nil,
+            birthday: bday,
+            notificationSettings: .default,
+            imageData: cn.imageData,
+            emoji: nil,
+            occupation: cn.jobTitle.isEmpty ? nil : cn.jobTitle,
+            hobbies: nil,
+            leisure: nil,
+            additionalInfo: nil,
+            phoneNumber: phone
+        )
     }
 }
