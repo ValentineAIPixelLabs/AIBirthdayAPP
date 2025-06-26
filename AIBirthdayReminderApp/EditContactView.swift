@@ -33,12 +33,23 @@ struct EditContactView: View {
     @State private var importAlertMessage = ""
     @State private var showPhonePickerAlert = false
     @State private var phoneNumbersFromContact: [String] = []
+    @State private var tempImportedContact: Contact?
 
     private let relations = ["Брат", "Сестра", "Отец", "Мать", "Бабушка", "Дедушка", "Сын", "Дочь", "Коллега", "Руководитель", "Начальник", "Товарищ", "Друг", "Лучший друг", "Супруг", "Супруга", "Партнер", "Девушка", "Парень", "Клиент"]
     private let genders = ["Мужской", "Женский"]
 
     private var isSaveEnabled: Bool {
         !name.isEmpty
+    }
+
+    private func isDuplicateContact(name: String, surname: String, birthday: Birthday?, phone: String) -> Bool {
+        vm.contacts.contains(where: { c in
+            c.id != contact.id &&
+            c.name == name &&
+            (c.surname ?? "") == (surname) &&
+            c.birthday == birthday &&
+            (c.phoneNumber ?? "") == (phone)
+        })
     }
 
     init(vm: ContactsViewModel, contact: Contact) {
@@ -198,14 +209,7 @@ struct EditContactView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Сохранить") {
-                        if isSaveEnabled {
-                            saveContact()
-                        } else {
-                            withAnimation { showSaveHint = true }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                withAnimation { showSaveHint = false }
-                            }
-                        }
+                        saveContact()
                     }
                     .disabled(!isSaveEnabled)
                 }
@@ -263,69 +267,27 @@ struct EditContactView: View {
         .sheet(isPresented: $isContactPickerPresented) {
             ContactPickerView { cnContact in
                 let imported = convertCNContactToContact(cnContact)
-                // Сбор всех телефонов для выбора
                 let numbers = cnContact.phoneNumbers.map { $0.value.stringValue }
                 if !numbers.isEmpty {
                     if numbers.count == 1 {
-                        phoneNumber = numbers[0]
+                        let importedPhone = numbers[0]
+                        let phoneWasChanged = phoneNumber != importedPhone
+                        phoneNumber = importedPhone
+                        importAndShowAlert(from: imported, phoneWasChanged: phoneWasChanged)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            isContactPickerPresented = false
+                        }
                     } else {
                         phoneNumbersFromContact = numbers
+                        tempImportedContact = imported
                         showPhonePickerAlert = true
+                        // не закрываем sheet, ждём выбора
                     }
-                }
-                // Остальные поля по приоритету:
-                var didUpdate = false
-                if !imported.name.isEmpty {
-                    if name != imported.name {
-                        name = imported.name
-                        didUpdate = true
-                    }
-                }
-                if let importedSurname = imported.surname, !importedSurname.isEmpty {
-                    if surname != importedSurname {
-                        surname = importedSurname
-                        didUpdate = true
-                    }
-                }
-                if let importedNickname = imported.nickname, !importedNickname.isEmpty {
-                    if nickname != importedNickname {
-                        nickname = importedNickname
-                        didUpdate = true
-                    }
-                }
-                if let importedBirthday = imported.birthday {
-                    if birthday != importedBirthday {
-                        birthday = importedBirthday
-                        didUpdate = true
-                    }
-                }
-                if let importedOccupation = imported.occupation, !importedOccupation.isEmpty {
-                    if occupation != importedOccupation {
-                        occupation = importedOccupation
-                        didUpdate = true
-                    }
-                }
-                if let imageData = imported.imageData, !imageData.isEmpty {
-                    if pickedImage?.jpegData(compressionQuality: 0.8) != imageData {
-                        pickedImage = UIImage(data: imageData)
-                        pickedEmoji = nil
-                        didUpdate = true
-                    }
-                }
-                if let importedPhone = imported.phoneNumber, !importedPhone.isEmpty {
-                    if phoneNumber != importedPhone {
-                        phoneNumber = importedPhone
-                        didUpdate = true
-                    }
-                }
-                if didUpdate {
-                    importAlertMessage = "Данные обновлены из Контактов."
                 } else {
-                    importAlertMessage = "Контакт не изменился."
-                }
-                showImportAlert = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    isContactPickerPresented = false
+                    importAndShowAlert(from: imported, phoneWasChanged: false)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        isContactPickerPresented = false
+                    }
                 }
             }
         }
@@ -338,14 +300,70 @@ struct EditContactView: View {
                 message: nil,
                 buttons: phoneNumbersFromContact.map { number in
                     .default(Text(number)) {
+                        let phoneWasChanged = phoneNumber != number
                         phoneNumber = number
+                        // Используем временный контакт (tempImportedContact)
+                        importAndShowAlert(from: tempImportedContact, phoneWasChanged: phoneWasChanged)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            isContactPickerPresented = false
+                        }
+                        tempImportedContact = nil
                     }
-                } + [.cancel()]
+                } + [.cancel({
+                    tempImportedContact = nil
+                })]
             )
         }
     }
 
+    private func importAndShowAlert(from imported: Contact?, phoneWasChanged: Bool) {
+        // Проверка на дубликат
+        if let imported = imported,
+           isDuplicateContact(name: imported.name, surname: imported.surname ?? "", birthday: imported.birthday, phone: phoneNumber) {
+            importAlertMessage = "Контакт с такими данными уже существует."
+            showImportAlert = true
+            return
+        }
+
+        var didUpdate = phoneWasChanged
+
+        if let imported = imported {
+            if !imported.name.isEmpty, name != imported.name {
+                name = imported.name
+                didUpdate = true
+            }
+            if let importedSurname = imported.surname, !importedSurname.isEmpty, surname != importedSurname {
+                surname = importedSurname
+                didUpdate = true
+            }
+            if let importedNickname = imported.nickname, !importedNickname.isEmpty, nickname != importedNickname {
+                nickname = importedNickname
+                didUpdate = true
+            }
+            if let importedBirthday = imported.birthday, birthday != importedBirthday {
+                birthday = importedBirthday
+                didUpdate = true
+            }
+            if let importedOccupation = imported.occupation, !importedOccupation.isEmpty, occupation != importedOccupation {
+                occupation = importedOccupation
+                didUpdate = true
+            }
+            if let imageData = imported.imageData, !imageData.isEmpty, pickedImage?.jpegData(compressionQuality: 0.8) != imageData {
+                pickedImage = UIImage(data: imageData)
+                pickedEmoji = nil
+                didUpdate = true
+            }
+        }
+        importAlertMessage = didUpdate ? "Данные обновлены из Контактов." : "Контакт не изменился."
+        showImportAlert = true
+    }
+
     private func saveContact() {
+        if isDuplicateContact(name: name, surname: surname, birthday: birthday, phone: phoneNumber) {
+            importAlertMessage = "Контакт с такими данными уже существует."
+            showImportAlert = true
+            return
+        }
         var updated = contact
         updated.name = name
         updated.surname = surname.isEmpty ? nil : surname

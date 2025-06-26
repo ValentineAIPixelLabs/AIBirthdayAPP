@@ -16,7 +16,7 @@ struct AddContactView: View {
     @State private var hobbies: String = ""
     @State private var leisure: String = ""
     @State private var additionalInfo: String = ""
-    @State private var phoneNumber: String = "" // Новое поле
+    @State private var phoneNumber: String = ""
 
     @State private var pickedImage: UIImage?
     @State private var pickedEmoji: String?
@@ -27,7 +27,6 @@ struct AddContactView: View {
     @State private var showEmojiPicker = false
 
     @State private var showSaveHint = false
-    @State private var isImporting = false
     @State private var isContactPickerPresented = false
     @State private var showImportAlert = false
     @State private var importAlertMessage = ""
@@ -39,6 +38,16 @@ struct AddContactView: View {
 
     private var isSaveEnabled: Bool {
         !name.isEmpty
+    }
+
+    // === Функция проверки на дубликат ===
+    private func isDuplicateContact(name: String, surname: String, birthday: Birthday?, phone: String) -> Bool {
+        vm.contacts.contains(where: { contact in
+            contact.name == name &&
+            (contact.surname ?? "") == (surname) &&
+            contact.birthday == birthday &&
+            (contact.phoneNumber ?? "") == (phone)
+        })
     }
 
     var body: some View {
@@ -166,14 +175,7 @@ struct AddContactView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Сохранить") {
-                        if isSaveEnabled {
-                            saveContact()
-                        } else {
-                            withAnimation { showSaveHint = true }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                withAnimation { showSaveHint = false }
-                            }
-                        }
+                        saveContact()
                     }
                     .disabled(!isSaveEnabled)
                 }
@@ -234,8 +236,6 @@ struct AddContactView: View {
         .sheet(isPresented: $isContactPickerPresented) {
             ContactPickerView { cnContact in
                 let imported = convertCNContactToContact(cnContact)
-
-                // Телефоны
                 let numbers = cnContact.phoneNumbers.map { $0.value.stringValue }
                 if !numbers.isEmpty {
                     if numbers.count == 1 {
@@ -245,9 +245,10 @@ struct AddContactView: View {
                         showPhonePickerAlert = true
                     }
                 }
-
-                // Остальная логика (аналогично выше)
-                if !vm.contacts.contains(where: { $0.name == imported.name && $0.surname == imported.surname && $0.birthday == imported.birthday }) {
+                // Проверка на дубликат
+                if isDuplicateContact(name: imported.name, surname: imported.surname ?? "", birthday: imported.birthday, phone: imported.phoneNumber ?? "") {
+                    importAlertMessage = "Контакт уже существует."
+                } else {
                     name = imported.name
                     surname = imported.surname ?? ""
                     nickname = imported.nickname ?? ""
@@ -258,13 +259,10 @@ struct AddContactView: View {
                         pickedEmoji = nil
                         pickedMonogram = ""
                     }
-                    importAlertMessage = "Контакт \"\(imported.name)\" успешно добавлен."
-                } else {
-                    importAlertMessage = "Контакт \"\(imported.name)\" уже существует."
+                    importAlertMessage = "Контакт успешно импортирован."
                 }
                 showImportAlert = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    dismiss()
                     isContactPickerPresented = false
                 }
             }
@@ -286,6 +284,11 @@ struct AddContactView: View {
     }
 
     private func saveContact() {
+        if isDuplicateContact(name: name, surname: surname, birthday: birthday, phone: phoneNumber) {
+            importAlertMessage = "Контакт уже существует."
+            showImportAlert = true
+            return
+        }
         let contact = Contact(
             id: UUID(),
             name: name,
