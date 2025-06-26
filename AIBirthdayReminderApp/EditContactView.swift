@@ -107,7 +107,7 @@ struct EditContactView: View {
                         .buttonStyle(.plain)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.top, -12)
+                    .padding(.top, -20)
                     .padding(.bottom, 4)
                     .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                     .listRowBackground(Color.clear)
