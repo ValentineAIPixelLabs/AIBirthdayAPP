@@ -72,62 +72,15 @@ struct ContactCardView: View {
 }
 
 
-struct TopBarViewWithSearch: View {
-    @Binding var showAPIKeySheet: Bool
-    var onAddTap: () -> Void
-    var onSearchTap: () -> Void
-
-    var body: some View {
-        HStack(alignment: .center) {
-            Text("Контакты")
-                .font(.title2).bold()
-                .foregroundColor(.primary)
-            Spacer()
-            Button(action: { showAPIKeySheet = true }) {
-                Image(systemName: "key")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(.accentColor)
-                    .frame(width: 44, height: 44)
-                    .background(
-                        Circle().fill(Color.white.opacity(0.3))
-                            .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
-                    )
-            }
-            .buttonStyle(ActionButtonStyle())
-            Spacer(minLength: 8)
-            Button(action: onSearchTap) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(.accentColor)
-                    .frame(width: 44, height: 44)
-                    .background(
-                        Circle().fill(Color.white.opacity(0.3))
-                            .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
-                    )
-            }
-            .buttonStyle(ActionButtonStyle())
-            Spacer(minLength: 8)
-            Button(action: onAddTap) {
-                Image(systemName: "plus")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(.accentColor)
-                    .frame(width: 44, height: 44)
-                    .background(
-                        Circle().fill(Color.white.opacity(0.3))
-                        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
-                    )
-            }
-            .buttonStyle(ActionButtonStyle())
-        }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 20)
-    }
-}
 
 
 // --- Основной ContentView ---
 struct ContentView: View {
+
     @StateObject var vm = ContactsViewModel()
+    @StateObject var chipFilter = ChipRelationFilter(
+        relations: ["Брат", "Сестра", "Отец", "Мать", "Бабушка", "Дедушка", "Сын", "Дочь", "Коллега", "Руководитель", "Начальник", "Товарищ", "Друг", "Лучший друг", "Супруг", "Супруга", "Партнер", "Девушка", "Парень", "Клиент"]
+    )
     @State private var showAPIKeySheet = false
     @State private var contactToDelete: Contact?
     @State private var showDeleteAlert = false
@@ -155,14 +108,13 @@ struct ContentView: View {
 
     private var filteredContacts: [Contact] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if query.isEmpty {
-            return vm.sortedContacts
+        let base = vm.sortedContacts.filter {
+            query.isEmpty ? true :
+                $0.name.lowercased().contains(query) ||
+                ($0.surname?.lowercased().contains(query) ?? false) ||
+                ($0.nickname?.lowercased().contains(query) ?? false)
         }
-        return vm.sortedContacts.filter {
-            $0.name.lowercased().contains(query) ||
-            ($0.surname?.lowercased().contains(query) ?? false) ||
-            ($0.nickname?.lowercased().contains(query) ?? false)
-        }
+        return chipFilter.filter(contacts: base)
     }
 
     private var sectionedContacts: [SectionedContacts] {
@@ -174,13 +126,76 @@ struct ContentView: View {
             ZStack {
                 gradient.ignoresSafeArea()
                 VStack(spacing: 0) {
-                    TopBarViewWithSearch(
-                        showAPIKeySheet: $showAPIKeySheet,
-                        onAddTap: { path.append("add") },
-                        onSearchTap: {
-                            showSearchBar = true
+                    HStack(alignment: .center) {
+                        Text("Контакты")
+                            .font(.title2).bold()
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Button(action: { showAPIKeySheet = true }) {
+                            Image(systemName: "key")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(.accentColor)
+                                .frame(width: 44, height: 44)
+                                .background(
+                                    Circle().fill(Color.white.opacity(0.3))
+                                        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
+                                )
                         }
-                    )
+                        .buttonStyle(ActionButtonStyle())
+                        Spacer(minLength: 8)
+                        Button(action: { showSearchBar = true }) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(.accentColor)
+                                .frame(width: 44, height: 44)
+                                .background(
+                                    Circle().fill(Color.white.opacity(0.3))
+                                        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
+                                )
+                        }
+                        .buttonStyle(ActionButtonStyle())
+                        Spacer(minLength: 8)
+                        Button(action: { path.append("add") }) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(.accentColor)
+                                .frame(width: 44, height: 44)
+                                .background(
+                                    Circle().fill(Color.white.opacity(0.3))
+                                    .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
+                                )
+                        }
+                        .buttonStyle(ActionButtonStyle())
+                    }
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 20)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(chipFilter.allRelations, id: \.self) { relation in
+                                Button(action: { chipFilter.toggle(relation) }) {
+                                    Text(relation)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .textCase(.lowercase)
+                                        .foregroundColor(
+                                            chipFilter.isSelected(relation) ? .white : .accentColor
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            chipFilter.isSelected(relation)
+                                            ? Color.accentColor
+                                            : Color.white.opacity(0.26)
+                                        )
+                                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                        .shadow(color: .black.opacity(chipFilter.isSelected(relation) ? 0.10 : 0.06), radius: 2, y: 1)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 3)
+                        .padding(.top, 0)
+                    }
 
                     if showSearchBar {
                         HStack {
@@ -221,7 +236,7 @@ struct ContentView: View {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text(BirthdaySectionsViewModel(contacts: []).sectionTitle(section.section))
                                         .font(.callout).bold()
-                                        .foregroundColor(.primary)
+                                        .foregroundColor(.secondary)
                                         .padding(.horizontal, 20)
                                         .padding(.top, 10)
                                     ForEach(section.contacts) { contact in
