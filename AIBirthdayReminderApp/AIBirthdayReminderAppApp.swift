@@ -27,6 +27,7 @@ struct AIBirthdayReminderAppApp: App {
     var body: some Scene {
         WindowGroup {
             AppTabView()
+                .environmentObject(HolidaysViewModel())
         }
     }
 }

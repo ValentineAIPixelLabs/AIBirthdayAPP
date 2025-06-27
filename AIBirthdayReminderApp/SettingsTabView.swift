@@ -4,10 +4,12 @@ import ContactsUI
 
 struct SettingsTabView: View {
     @ObservedObject var vm: ContactsViewModel
+    @EnvironmentObject var holidaysVM: HolidaysViewModel
     @State private var showNotificationSettings = false
     @State private var isContactPickerPresented = false
     @State private var showImportAlert = false
     @State private var importAlertMessage = ""
+    @State private var showDeletedHolidays = false
 
     var body: some View {
         NavigationStack {
@@ -41,12 +43,21 @@ struct SettingsTabView: View {
                             .padding(.vertical, 8)
                     }
                     .foregroundColor(.primary)
-                }
-                Section {
+
                     Button {
                         importAllContacts()
                     } label: {
                         Label("Импортировать все контакты", systemImage: "tray.and.arrow.down")
+                            .font(.headline)
+                            .padding(.vertical, 8)
+                    }
+                    .foregroundColor(.primary)
+                }
+                Section {
+                    Button {
+                        showDeletedHolidays = true
+                    } label: {
+                        Label("Удалённые праздники", systemImage: "trash")
                             .font(.headline)
                             .padding(.vertical, 8)
                     }
@@ -71,6 +82,11 @@ struct SettingsTabView: View {
                         importAlertMessage = "Контакт \"\(contact.name)\" уже существует."
                     }
                     showImportAlert = true
+                }
+            }
+            .sheet(isPresented: $showDeletedHolidays) {
+                NavigationStack {
+                    DeletedHolidaysView(vm: holidaysVM)
                 }
             }
             .alert(isPresented: $showImportAlert) {

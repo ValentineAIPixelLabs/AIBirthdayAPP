@@ -43,31 +43,27 @@ struct ContactCardView: View {
     var subtitleText: String { subtitle(for: contact) }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
-            ContactAvatarView(contact: contact, size: 64)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title)
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.88)
-                Text(details)
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-                    .opacity(0.96)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        CardPresetView {
+            HStack(alignment: .center, spacing: 16) {
+                ContactAvatarView(contact: contact, size: 64)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.88)
+                    Text(details)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .opacity(0.96)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Spacer()
             }
-            Spacer()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .cardStyle()
-        .padding(.horizontal, 20)
-        .padding(.vertical, 4)
-        .transition(.opacity.combined(with: .scale))
     }
 }
 
@@ -121,7 +117,8 @@ struct ContentView: View {
         BirthdaySectionsViewModel(contacts: filteredContacts).sectionedContacts()
     }
 
-    var body: some View {
+var body: some View {
+    Group {
         NavigationStack(path: $path) {
             ZStack {
                 gradient.ignoresSafeArea()
@@ -304,6 +301,8 @@ struct ContentView: View {
                 }
             }
         }
+    }
+    .environmentObject(HolidaysViewModel())
     }
 
     func handleImportedContact(_ importedCNContact: CNContact) {

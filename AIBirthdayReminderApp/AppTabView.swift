@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AppTabView: View {
     @StateObject var vm = ContactsViewModel()
+    
     var body: some View {
         TabView {
             // Вкладка "Подарок" — твой основной функционал
@@ -13,18 +14,9 @@ struct AppTabView: View {
                 Text("Контакты")
             }
 
-            // Вкладка "Праздники" (заглушка)
+            // Вкладка "Праздники"
             NavigationStack {
-                VStack {
-                    Image(systemName: "calendar.badge.clock")
-                        .font(.system(size: 48))
-                        .padding(.bottom, 16)
-                    Text("Праздники скоро появятся")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(.systemGroupedBackground))
+                HolidaysView()
             }
             .tabItem {
                 Image(systemName: "calendar.badge.clock")
@@ -40,7 +32,8 @@ struct AppTabView: View {
                 Text("Настройки")
             }
         }
-        .background(.ultraThinMaterial) // Liquid Glass style!
+        .toolbarBackground(.visible, for: .tabBar)
+        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .preferredColorScheme(
             vm.colorScheme == .system ? nil :
             (vm.colorScheme == .light ? .light : .dark)
