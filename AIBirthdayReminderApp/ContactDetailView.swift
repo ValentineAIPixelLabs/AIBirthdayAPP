@@ -538,7 +538,11 @@ struct ContactDetailView: View {
             formatter.dateFormat = "d MMMM yyyy"
             let dateString = formatter.string(from: date)
             let age = calculateAge(birthday: birthday)
-            return "Дата рождения: \(dateString) (\(age) \(ageSuffix(age)))"
+            if age < 0 {
+                return "Дата рождения: \(dateString)"
+            } else {
+                return "Дата рождения: \(dateString) (\(age) \(ageSuffix(age)))"
+            }
         } else {
             formatter.dateFormat = "d MMMM"
             let dateStringNoYear = formatter.string(from: date)
