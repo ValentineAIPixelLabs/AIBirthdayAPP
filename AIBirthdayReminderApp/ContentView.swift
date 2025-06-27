@@ -1,4 +1,3 @@
-// Для работы секций необходим файл BirthdaySection.swift с реализацией BirthdaySectionsViewModel
 import Contacts
 import SwiftUI
 import Foundation
@@ -46,7 +45,6 @@ struct ContactCardView: View {
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
             ContactAvatarView(contact: contact, size: 64)
-
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
                     .font(.headline)
@@ -61,12 +59,10 @@ struct ContactCardView: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                
             }
             Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        
         .padding()
         .cardStyle()
         .padding(.horizontal, 20)
@@ -75,9 +71,11 @@ struct ContactCardView: View {
     }
 }
 
-struct TopBarView: View {
+
+struct TopBarViewWithSearch: View {
     @Binding var showAPIKeySheet: Bool
     var onAddTap: () -> Void
+    var onSearchTap: () -> Void
 
     var body: some View {
         HStack(alignment: .center) {
@@ -93,7 +91,19 @@ struct TopBarView: View {
                     .background(
                         Circle().fill(Color.white.opacity(0.3))
                             .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
-                            )
+                    )
+            }
+            .buttonStyle(ActionButtonStyle())
+            Spacer(minLength: 8)
+            Button(action: onSearchTap) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(.accentColor)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        Circle().fill(Color.white.opacity(0.3))
+                            .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
+                    )
             }
             .buttonStyle(ActionButtonStyle())
             Spacer(minLength: 8)
@@ -105,7 +115,7 @@ struct TopBarView: View {
                     .background(
                         Circle().fill(Color.white.opacity(0.3))
                         .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
-                            )
+                    )
             }
             .buttonStyle(ActionButtonStyle())
         }
@@ -114,6 +124,8 @@ struct TopBarView: View {
     }
 }
 
+
+// --- Основной ContentView ---
 struct ContentView: View {
     @StateObject var vm = ContactsViewModel()
     @State private var showAPIKeySheet = false
@@ -126,6 +138,8 @@ struct ContentView: View {
         return !hasShown
     }()
     @State private var path = NavigationPath()
+    @State private var searchText = ""
+    @State private var showSearchBar = false
 
     private var gradient: LinearGradient {
         LinearGradient(
@@ -139,46 +153,20 @@ struct ContentView: View {
         )
     }
 
-    // Для работы секций необходим файл BirthdaySection.swift с реализацией BirthdaySectionsViewModel
-    private var sectionedContactList: some View {
-        let sectionedVM = BirthdaySectionsViewModel(contacts: vm.sortedContacts)
-        let sections = sectionedVM.sectionedContacts()
-        
-        return ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 18) {
-                ForEach(sections, id: \.section) { section in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(sectionedVM.sectionTitle(section.section))
-                            .font(.callout).bold()
-                            .foregroundColor(.primary)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 10)
-                        
-                        ForEach(section.contacts) { contact in
-                            NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
-                                ContactCardView(contact: contact)
-                                    .scaleEffect(highlightedContactID == contact.id ? 0.95 : 1.0)
-                                    .animation(.spring(response: 0.2, dampingFraction: 0.6), value: highlightedContactID)
-                            }
-                            .simultaneousGesture(
-                                LongPressGesture(minimumDuration: 0.55)
-                                    .onEnded { _ in
-                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                        highlightedContactID = contact.id
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.17) {
-                                            contactToDelete = contact
-                                            showDeleteAlert = true
-                                            highlightedContactID = nil
-                                        }
-                                    }
-                            )
-                        }
-                    }
-                }
-            }
-            .padding(.top, 20)
-            .padding(.bottom, 40)
+    private var filteredContacts: [Contact] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if query.isEmpty {
+            return vm.sortedContacts
         }
+        return vm.sortedContacts.filter {
+            $0.name.lowercased().contains(query) ||
+            ($0.surname?.lowercased().contains(query) ?? false) ||
+            ($0.nickname?.lowercased().contains(query) ?? false)
+        }
+    }
+
+    private var sectionedContacts: [SectionedContacts] {
+        BirthdaySectionsViewModel(contacts: filteredContacts).sectionedContacts()
     }
 
     var body: some View {
@@ -186,11 +174,81 @@ struct ContentView: View {
             ZStack {
                 gradient.ignoresSafeArea()
                 VStack(spacing: 0) {
-                    TopBarView(showAPIKeySheet: $showAPIKeySheet) {
-                        path.append("add")
+                    TopBarViewWithSearch(
+                        showAPIKeySheet: $showAPIKeySheet,
+                        onAddTap: { path.append("add") },
+                        onSearchTap: {
+                            showSearchBar = true
+                        }
+                    )
+
+                    if showSearchBar {
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.secondary)
+                            TextField("Поиск", text: $searchText)
+                                .textFieldStyle(PlainTextFieldStyle())
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+                            if !searchText.isEmpty {
+                                Button(action: { searchText = "" }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            Button("Отмена") {
+                                showSearchBar = false
+                                searchText = ""
+                                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                            }
+                            .foregroundColor(.accentColor)
+                        }
+                        .padding(10)
+                        .background(
+                            Color.white.opacity(0.7)
+                                .blur(radius: 0.3)
+                                .shadow(color: .black.opacity(0.09), radius: 10, y: 2)
+                        )
+                        .cornerRadius(12)
+                        .padding(.horizontal, 18)
+                        .padding(.top, 2)
+                        .padding(.bottom, 6)
                     }
-                    
-                    sectionedContactList
+
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 18) {
+                            ForEach(sectionedContacts, id: \.section) { section in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(BirthdaySectionsViewModel(contacts: []).sectionTitle(section.section))
+                                        .font(.callout).bold()
+                                        .foregroundColor(.primary)
+                                        .padding(.horizontal, 20)
+                                        .padding(.top, 10)
+                                    ForEach(section.contacts) { contact in
+                                        NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
+                                            ContactCardView(contact: contact)
+                                                .scaleEffect(highlightedContactID == contact.id ? 0.95 : 1.0)
+                                                .animation(.spring(response: 0.2, dampingFraction: 0.6), value: highlightedContactID)
+                                        }
+                                        .simultaneousGesture(
+                                            LongPressGesture(minimumDuration: 0.55)
+                                                .onEnded { _ in
+                                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                                    highlightedContactID = contact.id
+                                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.17) {
+                                                        contactToDelete = contact
+                                                        showDeleteAlert = true
+                                                        highlightedContactID = nil
+                                                    }
+                                                }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.top, 10)
+                        .padding(.bottom, 40)
+                    }
                 }
             }
             .navigationBarHidden(true)
