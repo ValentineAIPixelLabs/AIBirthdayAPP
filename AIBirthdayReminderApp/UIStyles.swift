@@ -51,7 +51,5 @@ struct CardPresetView<Content: View>: View {
         .shadow(color: UIConstants.cardShadowColor.opacity(0.6), radius: UIConstants.cardShadowRadius, x: UIConstants.cardShadowX, y: UIConstants.cardShadowY)
         .padding(.horizontal, 20)
         .padding(.vertical, 4)
-        .transition(.opacity.combined(with: .scale))
-        .animation(.easeInOut(duration: 0.12), value: UUID())
     }
 }

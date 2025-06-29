@@ -9,7 +9,6 @@ struct SettingsTabView: View {
     @State private var isContactPickerPresented = false
     @State private var showImportAlert = false
     @State private var importAlertMessage = ""
-    @State private var showDeletedHolidays = false
 
     var body: some View {
         NavigationStack {
@@ -53,16 +52,6 @@ struct SettingsTabView: View {
                     }
                     .foregroundColor(.primary)
                 }
-                Section {
-                    Button {
-                        showDeletedHolidays = true
-                    } label: {
-                        Label("Удалённые праздники", systemImage: "trash")
-                            .font(.headline)
-                            .padding(.vertical, 8)
-                    }
-                    .foregroundColor(.primary)
-                }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Настройки")
@@ -82,11 +71,6 @@ struct SettingsTabView: View {
                         importAlertMessage = "Контакт \"\(contact.name)\" уже существует."
                     }
                     showImportAlert = true
-                }
-            }
-            .sheet(isPresented: $showDeletedHolidays) {
-                NavigationStack {
-                    DeletedHolidaysView(vm: holidaysVM)
                 }
             }
             .alert(isPresented: $showImportAlert) {
