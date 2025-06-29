@@ -206,16 +206,16 @@ struct EditContactView: View {
             .scrollDismissesKeyboard(.immediately)
             .navigationTitle("Редактировать")
             .navigationBarBackButtonHidden(true)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Сохранить") {
-                        saveContact()
-                    }
-                    .disabled(!isSaveEnabled)
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Сохранить") {
+                    saveContact()
                 }
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") { dismiss() }
-                }
+                .disabled(!isSaveEnabled)
+            }
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Отмена") { dismiss() }
             }
         }
         .sheet(isPresented: $showAvatarSheet) {
@@ -265,7 +265,7 @@ struct EditContactView: View {
                 .ignoresSafeArea()
         }
         .sheet(isPresented: $isContactPickerPresented) {
-            ContactPickerView { cnContact in
+            SystemContactPickerView { cnContact in
                 let imported = convertCNContactToContact(cnContact)
                 let numbers = cnContact.phoneNumbers.map { $0.value.stringValue }
                 if !numbers.isEmpty {

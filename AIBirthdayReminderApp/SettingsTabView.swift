@@ -62,7 +62,7 @@ struct SettingsTabView: View {
                 }
             }
             .sheet(isPresented: $isContactPickerPresented) {
-                ContactPickerView { selectedContact in
+                SystemContactPickerView { selectedContact in
                     let contact = convertCNContactToContact(selectedContact)
                     if !vm.contacts.contains(where: { $0.name == contact.name && $0.surname == contact.surname && $0.birthday == contact.birthday }) {
                         vm.addContact(contact)
@@ -141,7 +141,7 @@ struct SettingsTabView: View {
     }
 }
 
-struct ContactPickerView: UIViewControllerRepresentable {
+struct SystemContactPickerView: UIViewControllerRepresentable {
     @Environment(\.presentationMode) var presentationMode
     var onSelectContact: (CNContact) -> Void
 
@@ -160,9 +160,9 @@ struct ContactPickerView: UIViewControllerRepresentable {
     }
 
     class Coordinator: NSObject, CNContactPickerDelegate {
-        let parent: ContactPickerView
+        let parent: SystemContactPickerView
 
-        init(_ parent: ContactPickerView) {
+        init(_ parent: SystemContactPickerView) {
             self.parent = parent
         }
 

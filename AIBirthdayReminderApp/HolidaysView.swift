@@ -396,58 +396,79 @@ extension HolidaysView {
         @State private var isPressed = false
 
         var body: some View {
-            HStack(alignment: .center, spacing: 16) {
-                ZStack {
-                    Circle()
-                        .fill(.thinMaterial)
-                        .overlay(
-                            Circle().stroke(Color.white.opacity(0.18), lineWidth: 1.2)
-                        )
-                        .clipShape(Circle())
-                        .shadow(color: .black.opacity(0.13), radius: 10, x: 0, y: 4)
-                        .frame(width: 64, height: 64)
-                    if let icon = holiday.icon, !icon.isEmpty {
-                        if isSingleEmoji(icon) {
-                            Text(icon)
-                                .font(.system(size: 32))
+            VStack(spacing: 0) {
+                HStack(alignment: .center, spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(.thinMaterial)
+                            .overlay(
+                                Circle().stroke(Color.white.opacity(0.18), lineWidth: 1.2)
+                            )
+                            .clipShape(Circle())
+                            .shadow(color: .black.opacity(0.13), radius: 10, x: 0, y: 4)
+                            .frame(width: 64, height: 64)
+                        if let icon = holiday.icon, !icon.isEmpty {
+                            if isSingleEmoji(icon) {
+                                Text(icon)
+                                    .font(.system(size: 32))
+                            } else {
+                                Image(systemName: icon)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 28, height: 28)
+                                    .foregroundColor(colorForType(holiday.type))
+                            }
                         } else {
-                            Image(systemName: icon)
+                            Image(systemName: "calendar")
                                 .resizable()
                                 .scaledToFit()
-                                .frame(width: 28, height: 28)
-                                .foregroundColor(colorForType(holiday.type))
+                                .frame(width: 30, height: 30)
+                                .foregroundColor(.red)
                         }
-                    } else {
-                        Image(systemName: "calendar")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 30, height: 30)
-                            .foregroundColor(.red)
                     }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(holiday.title)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.88)
+                        Text(dateFormatted(holiday.date))
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                            .opacity(0.96)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    Spacer()
                 }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(holiday.title)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.88)
-                    Text(dateFormatted(holiday.date))
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                        .opacity(0.96)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 22)
+                .padding(.horizontal)
+                // Spacer for increased height
+                Spacer(minLength: 20)
+                // Поздравить кнопка
+                if !isHidden {
+                    NavigationLink(destination: HolidayCongratsView(vm: ContactsViewModel(), holiday: holiday)) {
+                        Label {
+                            Text("Поздравить")
+                        } icon: {
+                            Image(systemName: "sparkles")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .clipShape(Capsule())
+                    .accentColor(.accentColor)
+                    .font(.headline)
+                    .padding(.horizontal)
+                    .padding(.bottom, 14)
                 }
-                Spacer()
             }
-            .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.ultraThinMaterial)
             .cornerRadius(20)
             .shadow(color: Color.black.opacity(0.13), radius: 10, x: 0, y: 4)
-            // .padding(.vertical, 4)
             .contextMenu {
                 if isHidden {
                     Button {

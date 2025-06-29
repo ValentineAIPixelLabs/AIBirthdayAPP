@@ -234,7 +234,7 @@ struct AddContactView: View {
                 .ignoresSafeArea()
         }
         .sheet(isPresented: $isContactPickerPresented) {
-            ContactPickerView { cnContact in
+            SystemContactPickerView { cnContact in
                 let imported = convertCNContactToContact(cnContact)
                 let numbers = cnContact.phoneNumbers.map { $0.value.stringValue }
                 if !numbers.isEmpty {
