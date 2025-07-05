@@ -123,55 +123,45 @@ final class ChatGPTService {
 
         task.resume()
     }
-    
-    /// Генерирует открытку через DALL-E API на основе данных контакта
+
+    /// Генерирует праздничную иллюстрацию на основе хобби, интересов, leisure и доп. информации (без текста)
     func generateCard(for contact: Contact, apiKey: String, completion: @escaping (Result<URL, Error>) -> Void) {
-        // Собираем промпт для DALL-E с максимальной персонализацией
-        var ageString = ""
-        let calendar = Calendar.current
-        let currentYear = calendar.component(.year, from: Date())
-        if let year = contact.birthday?.year {
-            let age = currentYear - year
-            ageString = " (возраст: \(age))"
-        }
+        
+        let description = """
+        Name: \(contact.name)
+        Gender: \(contact.gender ?? "")
+        Nickname: \(contact.nickname ?? "")
+        Age: \(Calendar.current.component(.year, from: Date()) - (contact.birthday?.year ?? Calendar.current.component(.year, from: Date())))
+        Occupation: \(contact.occupation ?? "")
+        Hobbies: \(contact.hobbies ?? "")
+        Leisure: \(contact.leisure ?? "")
+        Additional Info: \(contact.additionalInfo ?? "")
+        """
 
-        var prompt = "Современная стильная поздравительная открытка ко дню рождения для \(contact.name)\(ageString)"
-        if let nickname = contact.nickname, !nickname.isEmpty {
-            prompt += " (прозвище: \(nickname))"
-        }
-        if let relation = contact.relationType, !relation.isEmpty {
-            prompt += ", отношения: \(relation)"
-        }
-        if let occupation = contact.occupation, !occupation.isEmpty {
-            prompt += ". Род деятельности: \(occupation)"
-        }
-        if let hobbies = contact.hobbies, !hobbies.isEmpty {
-            prompt += ". Увлечения/Хобби: \(hobbies)"
-        }
-        if let leisure = contact.leisure, !leisure.isEmpty {
-            prompt += ". Как любит проводить свободное время: \(leisure)"
-        }
-        if let info = contact.additionalInfo, !info.isEmpty {
-            prompt += ". Дополнительная информация: \(info)"
-        }
-        prompt += ". Открытка должна состоять только из одного листа. Открытка должна быть только на русском языке! На открытке — крупная яркая надпись: «С днём рождения!» — строго по-русски, только кириллица, без латинских букв, без английского языка, без транслита, без лишнего текста. Современный дизайн, яркие цвета, минимум текста, без водяных знаков, без логотипов, только сама картинка открытки, больше упора на дизайн и локаничность"
+        let finalPrompt = """
+        A cute cartoonish personage with a thin outline is the main character of a birthday illustration. The phrase “С днём рождения!” in Cyrillic should be clearly visible at the top of the image with enough margin so it is not cut off. \(description) The background is a warm textured cream tone. Around the cat are colorful and playful confetti in warm shades, conveying a festive and harmonious atmosphere. No people, no faces, no text, no words, no letters or symbols.
+        """
 
-        // DALL-E API endpoint
+        print("🧠 Final image prompt: \n\(finalPrompt)")
+        self.requestImageGeneration(prompt: finalPrompt, apiKey: apiKey, contactId: contact.id, completion: completion)
+    }
+
+    private func requestImageGeneration(prompt: String, apiKey: String, contactId: UUID, completion: @escaping (Result<URL, Error>) -> Void) {
         guard let url = URL(string: "https://api.openai.com/v1/images/generations") else {
             completion(.failure(NSError(domain: "Invalid DALL-E URL", code: -10)))
             return
         }
-
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let body: [String: Any] = [
-            "model": "dall-e-3",
+            "model": "gpt-image-1",
             "prompt": prompt,
             "n": 1,
-            "size": "1024x1024"
+            "size": "1024x1024",
+            "quality": "medium"
         ]
 
         do {
@@ -186,27 +176,17 @@ final class ChatGPTService {
                 completion(.failure(error))
                 return
             }
-
             guard let data = data else {
                 completion(.failure(NSError(domain: "No data", code: -11)))
                 return
             }
 
             do {
-                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let dataArr = json["data"] as? [[String: Any]],
-                   let urlString = dataArr.first?["url"] as? String,
-                   let imageUrl = URL(string: urlString) {
-                    // Теперь скачиваем изображение по imageUrl и сохраняем локально
-                    let downloadTask = URLSession.shared.dataTask(with: imageUrl) { imageData, _, downloadError in
-                        if let downloadError = downloadError {
-                            completion(.failure(downloadError))
-                            return
-                        }
-                        guard let imageData = imageData else {
-                            completion(.failure(NSError(domain: "No image data", code: -14)))
-                            return
-                        }
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    print("🔎 OpenAI Response JSON: \(json)")
+                    if let dataArr = json["data"] as? [[String: Any]],
+                       let base64String = dataArr.first?["b64_json"] as? String,
+                       let imageData = Data(base64Encoded: base64String) {
                         do {
                             let fileManager = FileManager.default
                             let documentsURL = try fileManager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
@@ -214,28 +194,25 @@ final class ChatGPTService {
                             if !fileManager.fileExists(atPath: cardsDirectory.path) {
                                 try fileManager.createDirectory(at: cardsDirectory, withIntermediateDirectories: true)
                             }
-                            let fileName = UUID().uuidString + ".png"
+                            let contactIdPrefix = contactId.uuidString
+                            let fileName = "\(contactIdPrefix)_\(UUID().uuidString).png"
                             let fileURL = cardsDirectory.appendingPathComponent(fileName)
                             try imageData.write(to: fileURL)
-                            // Возвращаем локальный URL файла, а не интернет-ресурс
                             completion(.success(fileURL))
                         } catch {
                             completion(.failure(error))
                         }
+                    } else if let error = json["error"] as? [String: Any],
+                              let message = error["message"] as? String {
+                        completion(.failure(NSError(domain: message, code: -12)))
+                    } else {
+                        completion(.failure(NSError(domain: "Unexpected DALL-E response", code: -13)))
                     }
-                    downloadTask.resume()
-                } else if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let error = json["error"] as? [String: Any],
-                          let message = error["message"] as? String {
-                    completion(.failure(NSError(domain: message, code: -12)))
-                } else {
-                    completion(.failure(NSError(domain: "Unexpected DALL-E response", code: -13)))
                 }
             } catch {
                 completion(.failure(error))
             }
         }
-
         task.resume()
     }
 }

@@ -1,21 +1,19 @@
-//
-//  GreetingFullScreenView.swift
-//  AIBirthdayReminderApp
-//
-//  Created by Александр Дротенко on 19.06.2025.
-//
-
 import SwiftUI
 
 struct GreetingFullScreenView: View {
     @Binding var isPresented: Bool
-    let greeting: String
-    let greetings: [String]
+    @Binding var greetings: [String]
     let onDelete: (Int) -> Void
-    let onGenerate: () -> Void
-    
+    let onSaveGreeting: (String) -> Void
+    let contact: Contact?
+    let apiKey: String
+    let isTestMode: Bool
+
+    @State private var localGreeting: String?
+    @State private var isLoading: Bool = false
     @State private var showHistorySheet = false
     @State private var isCopyAlertPresented = false
+    @State private var errorMessage: String?
 
     var body: some View {
         ZStack {
@@ -46,7 +44,14 @@ struct GreetingFullScreenView: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 16) {
-                        if !greeting.isEmpty {
+                        if isLoading {
+                            HStack {
+                                ProgressView("Генерация поздравления...")
+                                    .progressViewStyle(CircularProgressViewStyle())
+                            }
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding()
+                        } else if let greeting = localGreeting, !greeting.isEmpty {
                             Text(greeting)
                                 .font(.body)
                                 .foregroundColor(.primary)
@@ -71,22 +76,34 @@ struct GreetingFullScreenView: View {
                                         Label("Удалить", systemImage: "trash")
                                     }
                                 }
+                        } else if let error = errorMessage {
+                            Text(error)
+                                .foregroundColor(.red)
+                                .padding(.horizontal, 16)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        } else {
+                            Text("Нажмите «Сгенерировать», чтобы получить поздравление")
+                                .foregroundColor(.secondary)
+                                .font(.body)
+                                .padding(.horizontal, 16)
+                                .frame(maxWidth: .infinity, alignment: .center)
                         }
                         Spacer(minLength: 0)
                     }
                     .padding(.top, 16)
-                    .animation(.easeInOut, value: greeting)
+                    .animation(.easeInOut, value: localGreeting)
                 }
                 .padding(.bottom, 0)
 
                 HStack(spacing: 16) {
-                    Button(action: onGenerate) {
+                    Button(action: handleGenerate) {
                         Label("Сгенерировать", systemImage: "sparkles")
                             .font(.system(size: 17, weight: .semibold))
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
                             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
+                    .disabled(isLoading)
                     Button(action: { showHistorySheet = true }) {
                         Label("История", systemImage: "list.bullet.rectangle")
                             .font(.system(size: 17, weight: .semibold))
@@ -108,17 +125,49 @@ struct GreetingFullScreenView: View {
             Button("OK", role: .cancel) { }
         }
     }
+
+    private func handleGenerate() {
+        errorMessage = nil
+        localGreeting = nil
+        guard !isLoading else { return }
+        guard let contact = contact, !apiKey.isEmpty else {
+            errorMessage = "Нет данных контакта или API-ключа."
+            return
+        }
+
+        if isTestMode {
+            localGreeting = "Тестовое поздравление! 🎉"
+            onSaveGreeting("Тестовое поздравление! 🎉")
+            return
+        }
+
+        isLoading = true
+        ChatGPTService.shared.generateGreeting(for: contact, apiKey: apiKey) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let greeting):
+                    self.localGreeting = greeting
+                    self.onSaveGreeting(greeting)
+                case .failure(let error):
+                    self.errorMessage = "Ошибка генерации: \(error.localizedDescription)"
+                }
+                self.isLoading = false
+            }
+        }
+    }
 }
 
-// MARK: - Previews
+// Пример Preview
 struct GreetingFullScreenView_Previews: PreviewProvider {
     static var previews: some View {
         GreetingFullScreenView(
             isPresented: .constant(true),
-            greeting: "Тестовое поздравление",
-            greetings: [],
+            greetings: .constant([]),
             onDelete: { _ in },
-            onGenerate: {}
+            onSaveGreeting: { _ in },
+            contact: nil,
+            apiKey: "",
+            isTestMode: false
         )
     }
 }

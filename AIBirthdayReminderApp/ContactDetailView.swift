@@ -7,7 +7,11 @@ struct ContactDetailView: View {
     let contactId: UUID
 
     
+    @State private var greetingsHistory: [String] = []
+    private let cardHistoryKey: String
+    private let greetingsHistoryKey: String
     @State private var pickedImage: UIImage?
+    @State private var cardHistory: [URL] = []
     @State private var showAvatarSheet = false
     @State private var showImagePicker = false
     @State private var showCameraPicker = false
@@ -16,61 +20,12 @@ struct ContactDetailView: View {
     @State private var pickedEmoji: String?
     @State private var pickedMonogram: String?
     @State private var monogramColor: Color = .blue
+    @State private var showGreetingScreen = false
+    @State private var showCardScreen = false
 
-    @State private var showGreetingSheet = false
-    @State private var isLoadingGreeting = false
-    @State private var generatedGreeting: String?
-    @State private var showApiKeyAlert = false
-    @State private var greetingsHistory: [String] = []
-
-    @State private var isLoadingCard = false
-    @State private var generatedCardURL: URL?
-    @State private var showCardSheet = false
-    @State private var cardHistory: [URL] = []
-    @State private var showCardHistorySheet = false
-    @State private var cardGenerationError: String? = nil
+    // Удалены состояния, связанные с генерацией поздравлений и открыток
 
     @AppStorage("openai_api_key") private var apiKey: String = ""
-    // MARK: - Greetings History Storage Helpers
-    func greetingsKey(for contactId: UUID) -> String {
-        "greetings_history_\(contactId.uuidString)"
-    }
-    func loadHistory(for contactId: UUID) -> [String] {
-        let key = greetingsKey(for: contactId)
-        if let data = UserDefaults.standard.data(forKey: key),
-           let arr = try? JSONDecoder().decode([String].self, from: data) {
-            return arr
-        }
-        return []
-    }
-    func saveHistory(_ history: [String], for contactId: UUID) {
-        let key = greetingsKey(for: contactId)
-        let data = try? JSONEncoder().encode(history)
-        UserDefaults.standard.set(data, forKey: key)
-    }
-    // MARK: - Card History Storage Helpers
-    func cardHistoryKey(for contactId: UUID) -> String {
-        "card_history_\(contactId.uuidString)"
-    }
-    func loadCardHistory(for contactId: UUID) -> [URL] {
-        let key = cardHistoryKey(for: contactId)
-        if let data = UserDefaults.standard.data(forKey: key),
-           let arr = try? JSONDecoder().decode([String].self, from: data) {
-            // Оставляем только реально существующие файлы
-            return arr.compactMap { path in
-                let url = URL(fileURLWithPath: path)
-                return FileManager.default.fileExists(atPath: url.path) ? url : nil
-            }
-        }
-        return []
-    }
-    func saveCardHistory(_ history: [URL], for contactId: UUID) {
-        let key = cardHistoryKey(for: contactId)
-        // Сохраняем только путь к локальному файлу
-        let arr = history.map { $0.path }
-        let data = try? JSONEncoder().encode(arr)
-        UserDefaults.standard.set(data, forKey: key)
-    }
 
     @Environment(\.dismiss) var dismiss
     @State private var selectedContactForEdit: Contact? = nil
@@ -79,15 +34,50 @@ struct ContactDetailView: View {
         vm.contacts.first(where: { $0.id == contactId })
     }
 
+    init(vm: ContactsViewModel, contactId: UUID) {
+        self.vm = vm
+        self.contactId = contactId
+        self.cardHistoryKey = "cardHistory_\(contactId.uuidString)"
+        self.greetingsHistoryKey = "greetingsHistory_\(contactId.uuidString)"
+    }
+
     let headerHeight: CGFloat = 360
 
     var body: some View {
         GeometryReader { geo in
-            mainContent(geo: geo, contact: contact)
+            if let contact = contact {
+                ZStack {
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            Color.blue.opacity(0.18),
+                            Color.purple.opacity(0.16),
+                            Color.teal.opacity(0.14)
+                        ]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .ignoresSafeArea()
+                    ZStack(alignment: .top) {
+                        ScrollView(.vertical, showsIndicators: false) {
+                            VStack(spacing: 20) {
+                                headerBlock(contact: contact)
+                                birthdayBlock(contact: contact)
+                                occupationBlock(contact: contact)
+                                hobbiesBlock(contact: contact)
+                                leisureBlock(contact: contact)
+                                additionalInfoBlock(contact: contact)
+                                actionsPanel(contact: contact)
+                                    .padding(.bottom, 40)
+                            }
+                            .padding(.top, 80)
+                        }
+                        topButtons(geo: geo)
+                    }
+                    .edgesIgnoringSafeArea(.top)
+                }
+            }
         }
-        .onAppear {
-            handleOnAppear()
-        }
+        // onAppear без вызова handleOnAppear
         .navigationBarBackButtonHidden(true)
         .navigationBarHidden(true)
         
@@ -176,167 +166,151 @@ struct ContactDetailView: View {
             MonogramPickerView(selectedMonogram: $pickedMonogram, color: $monogramColor)
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
-        .fullScreenCover(isPresented: $showGreetingSheet) {
-            GreetingFullScreenView(
-                isPresented: $showGreetingSheet,
-                greeting: generatedGreeting ?? "",
-                greetings: greetingsHistory,
-                onDelete: handleGreetingDelete,
-                onGenerate: handleGreetingGenerate
-            )
-        }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-         .alert("API ключ не задан", isPresented: $showApiKeyAlert) {
-             Button("OK", role: .cancel) {}
-         } message: {
-             Text("Пожалуйста, укажите API ключ OpenAI в настройках приложения.")
-         }
-        .fullScreenCover(isPresented: $showCardSheet) {
-            CardFullScreenView(
-                isPresented: $showCardSheet,
-                imageURL: isLoadingCard ? nil : generatedCardURL,
-                isLoading: isLoadingCard,
-                errorMessage: cardGenerationError,
-                onGenerateCard: handleCardGenerate,
-                cards: $cardHistory,
-                onDelete: handleCardDelete
-            )
-        }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-       
         
-        .fullScreenCover(isPresented: $showCardHistorySheet) {
-            CardsHistoryFullScreenView(
-                isPresented: $showCardHistorySheet,
-                cards: $cardHistory,
-                onDelete: { idx in
-                    if let contact = contact {
-                        var history = cardHistory
-                        // Удаляем файл физически
-                        let fileURL = history[idx]
-                        if FileManager.default.fileExists(atPath: fileURL.path) {
-                            try? FileManager.default.removeItem(at: fileURL)
-                        }
-                        history.remove(at: idx)
-                        saveCardHistory(history, for: contact.id)
-                        cardHistory = history
-                    }
-                }
-            )
+        .onAppear {
+            loadHistories()
         }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .fullScreenCover(isPresented: $showGreetingScreen) {
+            if let contact = contact {
+                GreetingFullScreenView(
+                    isPresented: $showGreetingScreen,
+                    greetings: $greetingsHistory,
+                    onDelete: { idx in
+                        greetingsHistory.remove(at: idx)
+                        saveGreetingsHistory()
+                    },
+                    onSaveGreeting: { newGreeting in
+                        greetingsHistory.insert(newGreeting, at: 0)
+                        saveGreetingsHistory()
+                    },
+                    contact: contact,
+                    apiKey: apiKey,
+                    isTestMode: isTestMode
+                )
+            } else {
+                EmptyView()
+            }
+        }
+        .fullScreenCover(isPresented: $showCardScreen) {
+            if let contact = contact {
+                CardFullScreenView(
+                    isPresented: $showCardScreen,
+                    cards: $cardHistory,
+                    onDelete: { idx in
+                        cardHistory.remove(at: idx)
+                        saveCardHistory()
+                    },
+                    onSaveCard: { url in
+                        cardHistory.insert(url, at: 0)
+                        saveCardHistory()
+                    },
+                    contact: contact,
+                    apiKey: apiKey,
+                    isTestMode: isTestMode
+                )
+            } else {
+                EmptyView()
+            }
+        }
     }
 
-    // MARK: - Main Content Layout
-    private func mainContent(geo: GeometryProxy, contact: Contact?) -> some View {
+
+    // MARK: - Occupation Block
+    private func occupationBlock(contact: Contact) -> some View {
         Group {
-            if let contact = contact {
-                ZStack {
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            Color.blue.opacity(0.18),
-                            Color.purple.opacity(0.16),
-                            Color.teal.opacity(0.14)
-                        ]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .ignoresSafeArea()
-                    ZStack(alignment: .top) {
-                        ScrollView(.vertical, showsIndicators: false) {
-                            VStack(spacing: 20) {
-                                // MARK: - Header
-                                headerBlock(contact: contact)
-                                // MARK: - BirthdayBlock
-                                birthdayBlock(contact: contact)
-                            // MARK: - DescriptionBlock (removed)
-                            // MARK: - Дополнительные сведения о контакте
-                            if let occupation = contact.occupation, !occupation.isEmpty {
-                                HStack(alignment: .top, spacing: 12) {
-                                    Image(systemName: "briefcase")
-                                        .foregroundColor(.indigo)
-                                        .font(.title3)
-                                        .padding(.top, 2)
-                                    Text(occupation)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                        .multilineTextAlignment(.leading)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    Spacer()
-                                }
-                                .padding()
-                                .cardStyle()
-                                .padding(.horizontal, 20)
-                                .padding(.top, 8)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                            }
-                            if let hobbies = contact.hobbies, !hobbies.isEmpty {
-                                HStack(alignment: .top, spacing: 12) {
-                                    Image(systemName: "soccerball")
-                                        .foregroundColor(.green)
-                                        .font(.title3)
-                                        .padding(.top, 2)
-                                    Text(hobbies)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                        .multilineTextAlignment(.leading)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    Spacer()
-                                }
-                                .padding()
-                                .cardStyle()
-                                .padding(.horizontal, 20)
-                                .padding(.top, 8)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                            }
-                            if let leisure = contact.leisure, !leisure.isEmpty {
-                                HStack(alignment: .top, spacing: 12) {
-                                    Image(systemName: "person.3.sequence")
-                                        .foregroundColor(.orange)
-                                        .font(.title3)
-                                        .padding(.top, 2)
-                                    Text(leisure)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                        .multilineTextAlignment(.leading)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    Spacer()
-                                }
-                                .padding()
-                                .cardStyle()
-                                .padding(.horizontal, 20)
-                                .padding(.top, 8)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                            }
-                            if let additionalInfo = contact.additionalInfo, !additionalInfo.isEmpty {
-                                HStack(alignment: .top, spacing: 12) {
-                                    Image(systemName: "lightbulb")
-                                        .foregroundColor(.yellow)
-                                        .font(.title3)
-                                        .padding(.top, 2)
-                                    Text(additionalInfo)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                        .multilineTextAlignment(.leading)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    Spacer()
-                                }
-                                .padding()
-                                .cardStyle()
-                                .padding(.horizontal, 20)
-                                .padding(.top, 8)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                            }
-                                // MARK: - ActionsPanel
-                                actionsPanel(contact: contact)
-                                    .padding(.bottom, 40)
-                            }
-                            .padding(.top, 80)
-                        }
-                        topButtons(geo: geo)
-                    }
-                    .edgesIgnoringSafeArea(.top)
+            if let occupation = contact.occupation, !occupation.isEmpty {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "briefcase")
+                        .foregroundColor(.indigo)
+                        .font(.title3)
+                        .padding(.top, 2)
+                    Text(occupation)
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
                 }
+                .padding()
+                .cardStyle()
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
+    // MARK: - Hobbies Block
+    private func hobbiesBlock(contact: Contact) -> some View {
+        Group {
+            if let hobbies = contact.hobbies, !hobbies.isEmpty {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "soccerball")
+                        .foregroundColor(.green)
+                        .font(.title3)
+                        .padding(.top, 2)
+                    Text(hobbies)
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                }
+                .padding()
+                .cardStyle()
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
+    // MARK: - Leisure Block
+    private func leisureBlock(contact: Contact) -> some View {
+        Group {
+            if let leisure = contact.leisure, !leisure.isEmpty {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "person.3.sequence")
+                        .foregroundColor(.orange)
+                        .font(.title3)
+                        .padding(.top, 2)
+                    Text(leisure)
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                }
+                .padding()
+                .cardStyle()
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
+    // MARK: - Additional Info Block
+    private func additionalInfoBlock(contact: Contact) -> some View {
+        Group {
+            if let info = contact.additionalInfo, !info.isEmpty {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "lightbulb")
+                        .foregroundColor(.yellow)
+                        .font(.title3)
+                        .padding(.top, 2)
+                    Text(info)
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                }
+                .padding()
+                .cardStyle()
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
     }
@@ -410,39 +384,13 @@ struct ContactDetailView: View {
 
     // MARK: - DescriptionBlock (удалён)
 
-    // MARK: - ActionsPanel
+    // MARK: - ActionsPanel (оставлены только две кнопки перехода)
     private func actionsPanel(contact: Contact) -> some View {
         let buttonSize: CGFloat = 64
         return HStack(alignment: .top, spacing: 22) {
             VStack(spacing: 4) {
                 Button {
-                    if apiKey.isEmpty {
-                        showApiKeyAlert = true
-                    } else {
-                        // TEST MODE GREETING
-                        if isTestMode {
-                            generatedGreeting = "Тестовое поздравление! 🎉"
-                            showGreetingSheet = true
-                            greetingsHistory.insert("Тестовое поздравление! 🎉", at: 0)
-                            saveHistory(greetingsHistory, for: contact.id)
-                            return
-                        } else {
-                            isLoadingGreeting = true
-                            showGreetingSheet = true
-                            generatedGreeting = nil
-                            ChatGPTService.shared.generateGreeting(for: contact, apiKey: apiKey) { result in
-                                switch result {
-                                case .success(let greeting):
-                                    generatedGreeting = greeting
-                                    greetingsHistory.insert(greeting, at: 0)
-                                    saveHistory(greetingsHistory, for: contact.id)
-                                case .failure(let error):
-                                    generatedGreeting = "Ошибка генерации: \(error.localizedDescription)"
-                                }
-                                isLoadingGreeting = false
-                            }
-                        }
-                    }
+                    showGreetingScreen = true
                 } label: {
                     ZStack {
                         Circle()
@@ -455,7 +403,7 @@ struct ContactDetailView: View {
                     }
                 }
                 .buttonStyle(ActionButtonStyle())
-                Text("Генерация\nпоздравления")
+                Text("Генерация поздравления")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -463,37 +411,7 @@ struct ContactDetailView: View {
             }
             VStack(spacing: 4) {
                 Button {
-                    if apiKey.isEmpty {
-                        showApiKeyAlert = true
-                    } else {
-                        // TEST MODE CARD
-                        if isTestMode {
-                            let testImage = UIImage(systemName: "photo")!
-                            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_card.png")
-                            try? testImage.pngData()?.write(to: tempURL)
-                            generatedCardURL = tempURL
-                            showCardSheet = true
-                            cardHistory.insert(tempURL, at: 0)
-                            saveCardHistory(cardHistory, for: contact.id)
-                            return
-                        } else {
-                            isLoadingCard = true
-                            showCardSheet = true
-                            generatedCardURL = nil
-                            cardGenerationError = nil
-                            ChatGPTService.shared.generateCard(for: contact, apiKey: apiKey) { result in
-                                switch result {
-                                case .success(let url):
-                                    generatedCardURL = url
-                                    cardHistory.insert(url, at: 0)
-                                    saveCardHistory(cardHistory, for: contact.id)
-                                case .failure(let error):
-                                    cardGenerationError = "Ошибка генерации открытки: \(error.localizedDescription)"
-                                }
-                                isLoadingCard = false
-                            }
-                        }
-                    }
+                    showCardScreen = true
                 } label: {
                     ZStack {
                         Circle()
@@ -503,10 +421,10 @@ struct ContactDetailView: View {
                         Image(systemName: "photo.on.rectangle.angled")
                             .font(.title)
                             .foregroundColor(.teal)
-                    } 
+                    }
                 }
                 .buttonStyle(ActionButtonStyle())
-                Text("Генерация\nоткрытки")
+                Text("Генерация открытки")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -608,102 +526,24 @@ struct ContactDetailView: View {
         .padding(.top, geo.safeAreaInsets.top + 8)
     }
 
-    // MARK: - OnAppear Handler
-    private func handleOnAppear() {
-        if let contact = contact {
-            greetingsHistory = loadHistory(for: contact.id)
-            cardHistory = loadCardHistory(for: contact.id)
-        }
+    // Удалены handleOnAppear, handleGreetingDelete, handleCardDelete
+
+    private func saveCardHistory() {
+        let urlStrings = cardHistory.map { $0.absoluteString }
+        UserDefaults.standard.set(urlStrings, forKey: cardHistoryKey)
     }
 
-    // MARK: - Greeting and Card Handlers
-    private func handleGreetingDelete(idx: Int) {
-        if let contact = contact {
-            var history = greetingsHistory
-            history.remove(at: idx)
-            saveHistory(history, for: contact.id)
-            greetingsHistory = history
-        }
+    private func saveGreetingsHistory() {
+        UserDefaults.standard.set(greetingsHistory, forKey: greetingsHistoryKey)
     }
 
-    private func handleGreetingGenerate() {
-        if apiKey.isEmpty {
-            showApiKeyAlert = true
-        } else {
-            if isTestMode {
-                generatedGreeting = "Тестовое поздравление! 🎉"
-                showGreetingSheet = true
-                greetingsHistory.insert("Тестовое поздравление! 🎉", at: 0)
-                saveHistory(greetingsHistory, for: contact?.id ?? UUID())
-            } else {
-                isLoadingGreeting = true
-                showGreetingSheet = true
-                generatedGreeting = nil
-                if let contact = contact {
-                    ChatGPTService.shared.generateGreeting(for: contact, apiKey: apiKey) { result in
-                        switch result {
-                        case .success(let greeting):
-                            generatedGreeting = greeting
-                            greetingsHistory.insert(greeting, at: 0)
-                            saveHistory(greetingsHistory, for: contact.id)
-                        case .failure(let error):
-                            generatedGreeting = "Ошибка генерации: \(error.localizedDescription)"
-                        }
-                        isLoadingGreeting = false
-                    }
-                }
-            }
+    private func loadHistories() {
+        if let savedCardURLs = UserDefaults.standard.stringArray(forKey: cardHistoryKey) {
+            cardHistory = savedCardURLs.compactMap { URL(string: $0) }
         }
-    }
 
-    private func handleCardGenerate() {
-        if apiKey.isEmpty {
-            showApiKeyAlert = true
-        } else {
-            if isTestMode {
-                let testImage = UIImage(systemName: "photo")!
-                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_card.png")
-                try? testImage.pngData()?.write(to: tempURL)
-                generatedCardURL = nil
-                DispatchQueue.main.async {
-                    generatedCardURL = tempURL
-                    showCardSheet = true
-                }
-                cardHistory.insert(tempURL, at: 0)
-                saveCardHistory(cardHistory, for: contact?.id ?? UUID())
-                return
-            } else {
-                isLoadingCard = true
-                showCardSheet = true
-                generatedCardURL = nil
-                cardGenerationError = nil
-                if let contact = contact {
-                    ChatGPTService.shared.generateCard(for: contact, apiKey: apiKey) { result in
-                        switch result {
-                        case .success(let url):
-                            generatedCardURL = url
-                            cardHistory.insert(url, at: 0)
-                            saveCardHistory(cardHistory, for: contact.id)
-                        case .failure(let error):
-                            cardGenerationError = "Ошибка генерации открытки: \(error.localizedDescription)"
-                        }
-                        isLoadingCard = false
-                    }
-                }
-            }
-        }
-    }
-
-    private func handleCardDelete(idx: Int) {
-        if let contact = contact {
-            var history = cardHistory
-            let fileURL = history[idx]
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-            history.remove(at: idx)
-            saveCardHistory(history, for: contact.id)
-            cardHistory = history
+        if let savedGreetings = UserDefaults.standard.stringArray(forKey: greetingsHistoryKey) {
+            greetingsHistory = savedGreetings
         }
     }
 }

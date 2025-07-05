@@ -11,8 +11,14 @@ import SwiftUI
 
 struct CardsHistoryFullScreenView: View {
     @Binding var isPresented: Bool
-    @Binding var cards: [URL]
-    let onDelete: (Int) -> Void
+    let contactId: UUID
+    @StateObject private var cardStore: CardHistoryStore
+
+    init(isPresented: Binding<Bool>, contactId: UUID) {
+        self._isPresented = isPresented
+        self.contactId = contactId
+        self._cardStore = StateObject(wrappedValue: CardHistoryStore(contactId: contactId))
+    }
     
     @State private var showCopyAnimation: [Bool] = []
     @State private var isCopyAlertPresented: [Bool] = []
@@ -30,7 +36,7 @@ struct CardsHistoryFullScreenView: View {
             )
             .ignoresSafeArea()
 
-            if cards.isEmpty {
+            if cardStore.savedCards.isEmpty {
                 Text("Нет сохранённых открыток")
                     .foregroundColor(.secondary)
                     .font(.title2)
@@ -38,7 +44,7 @@ struct CardsHistoryFullScreenView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 20) {
-                        ForEach(Array(cards.enumerated()), id: \.offset) { idx, url in
+                        ForEach(Array(cardStore.savedCards.enumerated()), id: \.offset) { idx, url in
                             AsyncImage(url: url) { phase in
                                 switch phase {
                                 case .empty:
@@ -71,18 +77,12 @@ struct CardsHistoryFullScreenView: View {
                                             downloadAndCopyImage(from: url, index: idx)
                                         }
                                         Button(role: .destructive) {
-                                            do {
-                                                try FileManager.default.removeItem(at: url)
-                                                cards.remove(at: idx)
-                                                onDelete(idx)
-                                                if showCopyAnimation.indices.contains(idx) {
-                                                    showCopyAnimation.remove(at: idx)
-                                                }
-                                                if isCopyAlertPresented.indices.contains(idx) {
-                                                    isCopyAlertPresented.remove(at: idx)
-                                                }
-                                            } catch {
-                                                // Handle error if needed
+                                            cardStore.deleteCard(at: idx)
+                                            if showCopyAnimation.indices.contains(idx) {
+                                                showCopyAnimation.remove(at: idx)
+                                            }
+                                            if isCopyAlertPresented.indices.contains(idx) {
+                                                isCopyAlertPresented.remove(at: idx)
                                             }
                                         } label: {
                                             Label("Удалить", systemImage: "trash")
@@ -126,21 +126,9 @@ struct CardsHistoryFullScreenView: View {
             .padding(.top, 16)
         }
         .onAppear {
-            showCopyAnimation = Array(repeating: false, count: cards.count)
-            isCopyAlertPresented = Array(repeating: false, count: cards.count)
-        }
-        .onChange(of: cards) { newValue, oldValue in
-            // Sync states arrays length with cards count
-            if showCopyAnimation.count < newValue.count {
-                showCopyAnimation.append(contentsOf: Array(repeating: false, count: newValue.count - showCopyAnimation.count))
-            } else if showCopyAnimation.count > newValue.count {
-                showCopyAnimation = Array(showCopyAnimation.prefix(newValue.count))
-            }
-            if isCopyAlertPresented.count < newValue.count {
-                isCopyAlertPresented.append(contentsOf: Array(repeating: false, count: newValue.count - isCopyAlertPresented.count))
-            } else if isCopyAlertPresented.count > newValue.count {
-                isCopyAlertPresented = Array(isCopyAlertPresented.prefix(newValue.count))
-            }
+            cardStore.loadSavedCards()
+            showCopyAnimation = Array(repeating: false, count: cardStore.savedCards.count)
+            isCopyAlertPresented = Array(repeating: false, count: cardStore.savedCards.count)
         }
     }
     
