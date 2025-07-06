@@ -472,7 +472,7 @@ extension HolidaysView {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.ultraThinMaterial)
-            .cornerRadius(20)
+            .cornerRadius(16)
             .shadow(color: Color.black.opacity(0.13), radius: 10, x: 0, y: 4)
             .contextMenu {
                 if isHidden {

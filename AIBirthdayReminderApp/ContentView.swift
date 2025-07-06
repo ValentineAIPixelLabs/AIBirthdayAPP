@@ -34,7 +34,9 @@ extension Birthday {
 }
 
 struct ContactCardView: View {
-    let contact: Contact
+    @Binding var contact: Contact
+
+    @State private var showCongratsMenu = false
 
     var title: String { birthdayTitle(for: contact) }
     var details: String {
@@ -42,27 +44,87 @@ struct ContactCardView: View {
     }
     var subtitleText: String { subtitle(for: contact) }
 
+    // Новый блок: вычисляемые свойства для строк
+    var daysLeft: Int {
+        // Логика подсчёта дней до ближайшего дня рождения
+        guard let birthday = contact.birthday, let birthdayDate = birthday.toDate() else { return 0 }
+        let now = Date()
+        var nextBirthday = Calendar.current.date(
+            bySetting: .year,
+            value: Calendar.current.component(.year, from: now),
+            of: birthdayDate) ?? birthdayDate
+        if nextBirthday < now {
+            nextBirthday = Calendar.current.date(byAdding: .year, value: 1, to: nextBirthday) ?? nextBirthday
+        }
+        let days = Calendar.current.dateComponents([.day], from: now, to: nextBirthday).day ?? 0
+        return days
+    }
+
+    var formattedDate: String {
+        guard let birthday = contact.birthday, let birthdayDate = birthday.toDate() else { return "" }
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "ru_RU")
+        dateFormatter.dateFormat = "d MMMM"
+        return dateFormatter.string(from: birthdayDate)
+    }
+
+    var weekdayString: String {
+        guard let birthday = contact.birthday, let birthdayDate = birthday.toDate() else { return "" }
+        let weekdayFormatter = DateFormatter()
+        weekdayFormatter.locale = Locale(identifier: "ru_RU")
+        weekdayFormatter.dateFormat = "EEEE"
+        return weekdayFormatter.string(from: birthdayDate).capitalized
+    }
+
     var body: some View {
         CardPresetView {
-            HStack(alignment: .center, spacing: 16) {
-                ContactAvatarView(contact: contact, size: 64)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.88)
-                    Text(details)
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                        .opacity(0.96)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .center, spacing: 16) {
+                    ContactAvatarView(contact: contact, size: 64)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(title)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.88)
+                        // Новый VStack для деталей даты и дня недели
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Через \(daysLeft) дней · \(formattedDate)")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Text(weekdayString)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Spacer()
                 }
-                Spacer()
+                .padding(.bottom, 12)
+
+                Spacer(minLength: 8)
+
+                Button(action: { showCongratsMenu = true }) {
+                    Label("Поздравить", systemImage: "sparkles")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Color.accentColor)
+                        )
+                }
+                .padding(.top, 14)
+                .padding(.bottom, 4)
             }
+            .frame(minHeight: 100)
+            .contentShape(Rectangle())
+            .padding(.vertical, 10)
+        }
+        // .frame(maxWidth: 375)
+        .sheet(isPresented: $showCongratsMenu) {
+            ContactCongratsView(contact: $contact)
         }
     }
 }
@@ -165,6 +227,14 @@ var body: some View {
                     chipFilter: chipFilter,
                     onDismiss: { showSearchContacts = false }
                 )
+            }
+            // Новый .sheet для редактирования контакта
+            .sheet(isPresented: $vm.isEditingContactPresented, onDismiss: {
+                vm.editingContact = nil
+            }) {
+                if let editingContact = vm.editingContact {
+                    EditContactView(vm: vm, contact: editingContact)
+                }
             }
         }
     }
@@ -411,23 +481,32 @@ private struct ContactsMainContent: View {
                                 .padding(.horizontal, 20)
                                 .padding(.top, 10)
                             ForEach(section.contacts) { contact in
-                                NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
-                                    ContactCardView(contact: contact)
+                                if let index = vm.contacts.firstIndex(where: { $0.id == contact.id }) {
+                                    NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
+                                        HStack {
+                                            ContactCardView(contact: $vm.contacts[index])
+                                        }
+                                        .padding(.horizontal, 20)
+                                        .frame(maxWidth: .infinity, alignment: .center)
                                         .scaleEffect(highlightedContactID == contact.id ? 0.95 : 1.0)
                                         .animation(.spring(response: 0.2, dampingFraction: 0.6), value: highlightedContactID)
-                                }
-                                .simultaneousGesture(
-                                    LongPressGesture(minimumDuration: 0.55)
-                                        .onEnded { _ in
-                                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                            highlightedContactID = contact.id
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.17) {
-                                                contactToDelete = contact
-                                                showDeleteAlert = true
-                                                highlightedContactID = nil
+                                        .contextMenu {
+                                            Button("Редактировать") {
+                                                if let index = vm.contacts.firstIndex(where: { $0.id == contact.id }) {
+                                                    DispatchQueue.main.async {
+                                                        vm.editingContact = contact
+                                                        vm.isEditingContactPresented = true
+                                                    }
+                                                }
+                                            }
+                                            Button(role: .destructive) {
+                                                vm.removeContact(contact)
+                                            } label: {
+                                                Text("Удалить")
                                             }
                                         }
-                                )
+                                    }
+                                }
                             }
                         }
                     }
@@ -514,8 +593,10 @@ private struct SearchContactsView: View {
                                     .padding(.horizontal, 20)
                                     .padding(.top, 10)
                                 ForEach(section.contacts) { contact in
-                                    NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
-                                        ContactCardView(contact: contact)
+                                    if let index = vm.contacts.firstIndex(where: { $0.id == contact.id }) {
+                                        NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
+                                            ContactCardView(contact: $vm.contacts[index])
+                                        }
                                     }
                                 }
                             }

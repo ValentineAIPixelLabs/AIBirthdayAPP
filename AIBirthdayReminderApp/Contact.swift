@@ -6,6 +6,30 @@
 //
 import Foundation
 
+public struct CongratsHistoryItem: Identifiable, Codable, Equatable {
+    public var id: UUID
+    let date: Date
+    let message: String
+    
+    public init(id: UUID = UUID(), date: Date, message: String) {
+        self.id = id
+        self.date = date
+        self.message = message
+    }
+}
+
+public struct CardHistoryItem: Identifiable, Codable, Equatable {
+    public var id: UUID
+    let date: Date
+    let cardID: String
+    
+    public init(id: UUID = UUID(), date: Date, cardID: String) {
+        self.id = id
+        self.date = date
+        self.cardID = cardID
+    }
+}
+
 struct Contact: Identifiable, Codable, Equatable {
     let id: UUID
     var name: String
@@ -32,6 +56,9 @@ struct Contact: Identifiable, Codable, Equatable {
     var additionalInfo: String?
     var phoneNumber: String?
     
+    var congratsHistory: [CongratsHistoryItem] = []
+    var cardHistory: [CardHistoryItem] = []
+    
     var age: Int? {
         guard let birthday = birthday, let year = birthday.year else { return nil }
         let calendar = Calendar.current
@@ -54,7 +81,9 @@ struct Contact: Identifiable, Codable, Equatable {
         lhs.occupation == rhs.occupation &&
         lhs.hobbies == rhs.hobbies &&
         lhs.leisure == rhs.leisure &&
-        lhs.additionalInfo == rhs.additionalInfo
+        lhs.additionalInfo == rhs.additionalInfo &&
+        lhs.congratsHistory == rhs.congratsHistory &&
+        lhs.cardHistory == rhs.cardHistory
     }
 }
 

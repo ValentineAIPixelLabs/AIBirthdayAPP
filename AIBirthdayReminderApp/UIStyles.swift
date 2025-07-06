@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct UIConstants {
-    static let cornerRadius: CGFloat = 20
+    static let cornerRadius: CGFloat = 16
     static let cardShadowColor = Color.black.opacity(0.13)
     static let cardShadowRadius: CGFloat = 10
     static let cardShadowX: CGFloat = 0
@@ -45,11 +45,11 @@ struct CardPresetView<Content: View>: View {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding()
+        .padding(8)
         .background(.ultraThinMaterial)
         .cornerRadius(UIConstants.cornerRadius)
         .shadow(color: UIConstants.cardShadowColor.opacity(0.6), radius: UIConstants.cardShadowRadius, x: UIConstants.cardShadowX, y: UIConstants.cardShadowY)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
     }
 }

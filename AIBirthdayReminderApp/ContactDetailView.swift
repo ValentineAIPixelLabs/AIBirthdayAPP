@@ -7,11 +7,7 @@ struct ContactDetailView: View {
     let contactId: UUID
 
     
-    @State private var greetingsHistory: [String] = []
-    private let cardHistoryKey: String
-    private let greetingsHistoryKey: String
     @State private var pickedImage: UIImage?
-    @State private var cardHistory: [URL] = []
     @State private var showAvatarSheet = false
     @State private var showImagePicker = false
     @State private var showCameraPicker = false
@@ -20,8 +16,6 @@ struct ContactDetailView: View {
     @State private var pickedEmoji: String?
     @State private var pickedMonogram: String?
     @State private var monogramColor: Color = .blue
-    @State private var showGreetingScreen = false
-    @State private var showCardScreen = false
 
     // Удалены состояния, связанные с генерацией поздравлений и открыток
 
@@ -37,8 +31,6 @@ struct ContactDetailView: View {
     init(vm: ContactsViewModel, contactId: UUID) {
         self.vm = vm
         self.contactId = contactId
-        self.cardHistoryKey = "cardHistory_\(contactId.uuidString)"
-        self.greetingsHistoryKey = "greetingsHistory_\(contactId.uuidString)"
     }
 
     let headerHeight: CGFloat = 360
@@ -159,34 +151,6 @@ struct ContactDetailView: View {
         .transition(.move(edge: .bottom).combined(with: .opacity))
         
         .onAppear {
-            loadHistories()
-        }
-        .fullScreenCover(isPresented: $showGreetingScreen) {
-            GreetingsHistoryFullScreenView(
-                isPresented: $showGreetingScreen,
-                greetings: $greetingsHistory
-            )
-        }
-        .fullScreenCover(isPresented: $showCardScreen) {
-            if let contact = contact {
-                CardFullScreenView(
-                    isPresented: $showCardScreen,
-                    cards: $cardHistory,
-                    onDelete: { idx in
-                        cardHistory.remove(at: idx)
-                        saveCardHistory()
-                    },
-                    onSaveCard: { url in
-                        cardHistory.insert(url, at: 0)
-                        saveCardHistory()
-                    },
-                    contact: contact,
-                    apiKey: apiKey,
-                    isTestMode: isTestMode
-                )
-            } else {
-                EmptyView()
-            }
         }
     }
 
@@ -360,55 +324,9 @@ struct ContactDetailView: View {
 
     // MARK: - DescriptionBlock (удалён)
 
-    // MARK: - ActionsPanel (оставлены только две кнопки перехода)
+    // MARK: - ActionsPanel (кнопки генерации удалены)
     private func actionsPanel(contact: Contact) -> some View {
-        let buttonSize: CGFloat = 64
-        return HStack(alignment: .top, spacing: 22) {
-            VStack(spacing: 4) {
-                Button {
-                    showGreetingScreen = true
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .frame(width: buttonSize, height: buttonSize)
-                            .shadow(color: Color.black.opacity(0.3), radius: 3, x: 0, y: 1)
-                        Image(systemName: "sparkles")
-                            .font(.title)
-                            .foregroundColor(.yellow)
-                    }
-                }
-                .buttonStyle(ActionButtonStyle())
-                Text("Генерация поздравления")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            VStack(spacing: 4) {
-                Button {
-                    showCardScreen = true
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .frame(width: buttonSize, height: buttonSize)
-                            .shadow(color: Color.black.opacity(0.3), radius: 3, x: 0, y: 1)
-                        Image(systemName: "photo.on.rectangle.angled")
-                            .font(.title)
-                            .foregroundColor(.teal)
-                    }
-                }
-                .buttonStyle(ActionButtonStyle())
-                Text("Генерация открытки")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 20)
+        EmptyView()
     }
 
     // MARK: - Birthday Date Formatter
@@ -504,24 +422,6 @@ struct ContactDetailView: View {
 
     // Удалены handleOnAppear, handleGreetingDelete, handleCardDelete
 
-    private func saveCardHistory() {
-        let urlStrings = cardHistory.map { $0.absoluteString }
-        UserDefaults.standard.set(urlStrings, forKey: cardHistoryKey)
-    }
-
-    private func saveGreetingsHistory() {
-        UserDefaults.standard.set(greetingsHistory, forKey: greetingsHistoryKey)
-    }
-
-    private func loadHistories() {
-        if let savedCardURLs = UserDefaults.standard.stringArray(forKey: cardHistoryKey) {
-            cardHistory = savedCardURLs.compactMap { URL(string: $0) }
-        }
-
-        if let savedGreetings = UserDefaults.standard.stringArray(forKey: greetingsHistoryKey) {
-            greetingsHistory = savedGreetings
-        }
-    }
 }
 
 

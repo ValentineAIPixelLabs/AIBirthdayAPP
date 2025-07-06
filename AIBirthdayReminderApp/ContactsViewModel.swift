@@ -14,6 +14,8 @@ class ContactsViewModel: ObservableObject {
     }
     @Published var contacts: [Contact] = []
     @Published var isPresentingAdd: Bool = false
+    @Published var editingContact: Contact? = nil
+    @Published var isEditingContactPresented: Bool = false
     @Published var globalNotificationSettings: NotificationSettings = .default {
         didSet {
             saveNotificationSettings()
