@@ -1,21 +1,13 @@
 // MARK: - Обёртки для истории поздравлений и удаления
 
-struct GeneratedText: Identifiable, Equatable {
-    let id = UUID()
-    let value: String
-}
-struct DeletableText: Identifiable {
+struct GeneratedText: Identifiable, Codable, Equatable {
     let id: UUID
     let value: String
 }
-struct DeletableImage: Identifiable {
-    let id = UUID()
-    let image: UIImage
-}
 
-struct GeneratedCard: Identifiable, Equatable {
-    let id = UUID()
-    let image: UIImage
+struct GeneratedCard: Identifiable, Codable, Equatable {
+    let id: UUID
+    let imageData: Data
 }
 
 import SwiftUI
@@ -33,9 +25,6 @@ struct HolidayCongratsView: View {
 
     @State private var shareItem: ShareItem?
     
-    @State private var textToDelete: DeletableText?
-    @State private var cardToDelete: GeneratedCard?
-    
     @State private var showCongratsActionSheet = false
     @State private var congratsActionType: CongratsActionType?
     @State private var showContactPicker = false
@@ -45,16 +34,14 @@ struct HolidayCongratsView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.blue.opacity(0.18),
-                    Color.purple.opacity(0.16),
-                    Color.teal.opacity(0.14)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            AppBackground()
+                .onChange(of: generatedTexts) {
+                    saveCongratsHistory()
+                }
+                .onChange(of: generatedCards) {
+                    saveCardHistory()
+                }
+                .onAppear { loadCongratsHistory(); loadCardHistory() }
 
             HolidayCongratsMainContent(
                 holiday: holiday,
@@ -65,8 +52,6 @@ struct HolidayCongratsView: View {
                 generatedCards: $generatedCards,
                 shareText: .constant(nil), // not used
                 shareImage: .constant(nil), // not used
-                textToDelete: $textToDelete, // not used
-                cardToDelete: .constant(nil), // not used
                 showCongratsActionSheet: $showCongratsActionSheet,
                 congratsActionType: $congratsActionType,
                 showContactPicker: $showContactPicker,
@@ -84,12 +69,9 @@ struct HolidayCongratsView: View {
                 onGenerateText: { congratsActionType = .text; showCongratsActionSheet = true },
                 onGenerateCard: { congratsActionType = .card; showCongratsActionSheet = true },
                 onShareText: { shareItem = .text($0) },
-                onDeleteText: {
-                    print("onDeleteText closure вызван для: \($0.value)")
-                    textToDelete = DeletableText(id: $0.id, value: $0.value)
-                },
-                onShareImage: { shareItem = .image($0.image) },
-                onDeleteImage: { cardToDelete = $0 }
+                onDeleteText: { _ in },
+                onShareImage: { shareItem = .image(UIImage(data: $0.imageData) ?? UIImage()) },
+                onDeleteImage: { _ in }
             )
         }
         .confirmationDialog(
@@ -129,31 +111,7 @@ struct HolidayCongratsView: View {
                 ActivityView(activityItems: [image])
             }
         }
-        .alert(item: $textToDelete) { deletable in
-            Alert(
-                title: Text("Удалить поздравление?"),
-                message: Text(deletable.value),
-                primaryButton: .destructive(Text("Удалить")) {
-                    print("До удаления: \(generatedTexts.count)")
-                    print("Удаляем: \(deletable.id), \(deletable.value)")
-                    generatedTexts.removeAll { $0.id == deletable.id }
-                    print("После удаления: \(generatedTexts.count)")
-                    saveCongratsHistory()
-                    loadCongratsHistory()
-                },
-                secondaryButton: .cancel()
-            )
-        }
-        .alert(item: $cardToDelete) { deletable in
-            Alert(
-                title: Text("Удалить открытку?"),
-                primaryButton: .destructive(Text("Удалить")) {
-                    generatedCards.removeAll { $0.id == deletable.id }
-                    saveCardHistory()
-                },
-                secondaryButton: .cancel()
-            )
-        }
+        // Alerts for deleting moved to HolidayCongratsMainContent
     }
 
     // MARK: - Helpers
@@ -183,7 +141,7 @@ struct HolidayCongratsView: View {
     func generateTextCongrats() {
         isGeneratingText = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            generatedTexts.insert(GeneratedText(value: "Текстовое поздравление (\(selectedStyle.title)) для '\(holiday.title)'"), at: 0)
+            generatedTexts.insert(GeneratedText(id: UUID(), value: "Текстовое поздравление (\(selectedStyle.title)) для '\(holiday.title)'"), at: 0)
             saveCongratsHistory()
             isGeneratingText = false
         }
@@ -192,8 +150,10 @@ struct HolidayCongratsView: View {
         isGeneratingCard = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             if let img = UIImage(systemName: "gift") {
-                generatedCards.insert(GeneratedCard(image: img), at: 0)
-                saveCardHistory()
+                if let data = img.pngData() {
+                    generatedCards.insert(GeneratedCard(id: UUID(), imageData: data), at: 0)
+                    saveCardHistory()
+                }
             }
             isGeneratingCard = false
         }
@@ -201,7 +161,7 @@ struct HolidayCongratsView: View {
     func generatePersonalizedTextCongrats(for contact: Contact) {
         isGeneratingText = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            generatedTexts.insert(GeneratedText(value: "Персональное поздравление (\(selectedStyle.title)) для \(contact.fullName) и праздника '\(holiday.title)'"), at: 0)
+            generatedTexts.insert(GeneratedText(id: UUID(), value: "Персональное поздравление (\(selectedStyle.title)) для \(contact.fullName) и праздника '\(holiday.title)'"), at: 0)
             saveCongratsHistory()
             isGeneratingText = false
         }
@@ -210,8 +170,10 @@ struct HolidayCongratsView: View {
         isGeneratingCard = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             if let img = UIImage(systemName: "gift") {
-                generatedCards.insert(GeneratedCard(image: img), at: 0)
-                saveCardHistory()
+                if let data = img.pngData() {
+                    generatedCards.insert(GeneratedCard(id: UUID(), imageData: data), at: 0)
+                    saveCardHistory()
+                }
             }
             isGeneratingCard = false
         }
@@ -219,35 +181,33 @@ struct HolidayCongratsView: View {
 
     func saveCongratsHistory() {
         let key = "congrats_texts_\(holiday.id.uuidString)"
-        let arr = generatedTexts.map { $0.value }
-        UserDefaults.standard.set(arr, forKey: key)
+        if let data = try? JSONEncoder().encode(generatedTexts) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
     }
     
     func loadCongratsHistory() {
         let key = "congrats_texts_\(holiday.id.uuidString)"
-        if let saved = UserDefaults.standard.stringArray(forKey: key) {
+        if let data = UserDefaults.standard.data(forKey: key),
+           let saved = try? JSONDecoder().decode([GeneratedText].self, from: data) {
             DispatchQueue.main.async {
-                generatedTexts = saved.map { GeneratedText(value: $0) }
+                generatedTexts = saved
             }
         }
     }
     
     func saveCardHistory() {
         let key = "congrats_cards_\(holiday.id.uuidString)"
-        let dataArr = generatedCards.compactMap { $0.image.pngData() }
-        UserDefaults.standard.set(dataArr, forKey: key)
+        if let data = try? JSONEncoder().encode(generatedCards) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
     }
     
     func loadCardHistory() {
         let key = "congrats_cards_\(holiday.id.uuidString)"
-        if let arr = UserDefaults.standard.array(forKey: key) as? [Data] {
-            generatedCards = arr.compactMap { data in
-                if let img = UIImage(data: data) {
-                    return GeneratedCard(image: img)
-                } else {
-                    return nil
-                }
-            }
+        if let data = UserDefaults.standard.data(forKey: key),
+           let arr = try? JSONDecoder().decode([GeneratedCard].self, from: data) {
+            generatedCards = arr
         }
     }
 
@@ -275,8 +235,6 @@ private struct HolidayCongratsMainContent: View {
     @Binding var generatedCards: [GeneratedCard]
     @Binding var shareText: String?
     @Binding var shareImage: UIImage?
-    @Binding var textToDelete: DeletableText?
-    @Binding var cardToDelete: GeneratedCard?
     @Binding var showCongratsActionSheet: Bool
     @Binding var congratsActionType: HolidayCongratsView.CongratsActionType?
     @Binding var showContactPicker: Bool
@@ -302,12 +260,16 @@ private struct HolidayCongratsMainContent: View {
     let onShareImage: (GeneratedCard) -> Void
     let onDeleteImage: (GeneratedCard) -> Void
 
+    // Локальные состояния для алертов удаления
+    @State private var localTextToDelete: GeneratedText?
+    @State private var localCardToDelete: GeneratedCard?
+
     var body: some View {
         VStack(spacing: 0) {
-            Button("Тест Alert") {
-                textToDelete = DeletableText(id: UUID(), value: "Тест")
-            }
-            .padding()
+            // Button("Тест Alert") {
+            //     textToDelete = GeneratedText(id: UUID(), value: "Тест")
+            // }
+            // .padding()
             HStack(alignment: .center) {
                 Button(action: { dismiss() }) {
                     Image(systemName: "chevron.left")
@@ -420,7 +382,7 @@ private struct HolidayCongratsMainContent: View {
                                             onShareText(item.value)
                                         }
                                         Button(role: .destructive) {
-                                            onDeleteText(item)
+                                            localTextToDelete = item
                                         } label: {
                                             Label("Удалить", systemImage: "trash")
                                         }
@@ -428,6 +390,17 @@ private struct HolidayCongratsMainContent: View {
                             }
                         }
                         .padding(.top, 10)
+                        .alert(item: $localTextToDelete) { deletable in
+                            Alert(
+                                title: Text("Удалить поздравление?"),
+                                message: Text(deletable.value),
+                                primaryButton: .destructive(Text("Удалить")) {
+                                    generatedTexts.removeAll { $0.id == deletable.id }
+                                    saveCongratsHistory()
+                                },
+                                secondaryButton: .cancel()
+                            )
+                        }
                     }
 
                     if !generatedCards.isEmpty {
@@ -437,19 +410,21 @@ private struct HolidayCongratsMainContent: View {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack {
                                     ForEach(generatedCards) { card in
-                                        Image(uiImage: card.image)
+                                        Image(uiImage: UIImage(data: card.imageData) ?? UIImage())
                                             .resizable()
                                             .frame(width: 100, height: 100)
                                             .cornerRadius(10)
                                             .contextMenu {
                                                 Button("Скопировать") {
-                                                    UIPasteboard.general.image = card.image
+                                                    if let img = UIImage(data: card.imageData) {
+                                                        UIPasteboard.general.image = img
+                                                    }
                                                 }
                                                 Button("Поделиться") {
                                                     onShareImage(card)
                                                 }
                                                 Button(role: .destructive) {
-                                                    onDeleteImage(card)
+                                                    localCardToDelete = card
                                                 } label: {
                                                     Label("Удалить", systemImage: "trash")
                                                 }
@@ -459,13 +434,19 @@ private struct HolidayCongratsMainContent: View {
                             }
                         }
                         .padding(.top, 10)
+                        .alert(item: $localCardToDelete) { deletable in
+                            Alert(
+                                title: Text("Удалить открытку?"),
+                                primaryButton: .destructive(Text("Удалить")) {
+                                    generatedCards.removeAll { $0.id == deletable.id }
+                                    saveCardHistory()
+                                },
+                                secondaryButton: .cancel()
+                            )
+                        }
                     }
                 }
                 .padding(.horizontal, 20)
-            }
-            .onAppear {
-                loadCongratsHistory()
-                loadCardHistory()
             }
         }
     }

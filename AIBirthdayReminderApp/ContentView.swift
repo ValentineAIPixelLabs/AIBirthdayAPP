@@ -87,30 +87,14 @@ struct ContentView: View {
         return !hasShown
     }()
     @State private var path = NavigationPath()
-    @State private var searchText = ""
-    @State private var showSearchBar = false
+    // Удаляем старое состояние поиска
+    @State private var showSearchContacts: Bool = false
+    @State private var searchText: String = ""
 
-    private var gradient: LinearGradient {
-        LinearGradient(
-            gradient: Gradient(colors: [
-                Color.blue.opacity(0.18),
-                Color.purple.opacity(0.16),
-                Color.teal.opacity(0.14)
-            ]),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
 
     private var filteredContacts: [Contact] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let base = vm.sortedContacts.filter {
-            query.isEmpty ? true :
-                $0.name.lowercased().contains(query) ||
-                ($0.surname?.lowercased().contains(query) ?? false) ||
-                ($0.nickname?.lowercased().contains(query) ?? false)
-        }
-        return chipFilter.filter(contacts: base)
+        // Фильтрация только по chipFilter, поиск теперь в отдельном SearchContactsView
+        return chipFilter.filter(contacts: vm.sortedContacts)
     }
 
     private var sectionedContacts: [SectionedContacts] {
@@ -121,7 +105,7 @@ var body: some View {
     Group {
         NavigationStack(path: $path) {
             ZStack {
-                gradient.ignoresSafeArea()
+                AppBackground()
                 ContactsMainContent(
                     vm: vm,
                     chipFilter: chipFilter,
@@ -132,8 +116,6 @@ var body: some View {
                     isContactPickerPresented: $isContactPickerPresented,
                     showImportOptions: $showImportOptions,
                     path: $path,
-                    searchText: $searchText,
-                    showSearchBar: $showSearchBar,
                     filteredContacts: filteredContacts,
                     sectionedContacts: sectionedContacts,
                     handleImportedContact: handleImportedContact
@@ -175,6 +157,14 @@ var body: some View {
                 SystemContactPickerView { importedCNContact in
                     handleImportedContact(importedCNContact)
                 }
+            }
+            // Новый .sheet для поиска
+            .sheet(isPresented: $showSearchContacts) {
+                SearchContactsView(
+                    vm: vm,
+                    chipFilter: chipFilter,
+                    onDismiss: { showSearchContacts = false }
+                )
             }
         }
     }
@@ -248,14 +238,32 @@ private struct ContactsMainContent: View {
     @Binding var isContactPickerPresented: Bool
     @Binding var showImportOptions: Bool
     @Binding var path: NavigationPath
-    @Binding var searchText: String
-    @Binding var showSearchBar: Bool
     let filteredContacts: [Contact]
     let sectionedContacts: [SectionedContacts]
     let handleImportedContact: (CNContact) -> Void
 
+    // Новый стиль поиска, как в HolidayDetailView
+    @State private var isSearchActive: Bool = false
+    @State private var searchText: String = ""
+
+    // Фильтрация контактов по поиску и чипам
+    private var filteredContactsWithSearch: [Contact] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let base = vm.sortedContacts.filter {
+            query.isEmpty ? true :
+                $0.name.lowercased().contains(query) ||
+                ($0.surname?.lowercased().contains(query) ?? false) ||
+                ($0.nickname?.lowercased().contains(query) ?? false)
+        }
+        return chipFilter.filter(contacts: base)
+    }
+    private var sectionedContactsWithSearch: [SectionedContacts] {
+        BirthdaySectionsViewModel(contacts: filteredContactsWithSearch).sectionedContacts()
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            // Верхняя панель с кнопками
             HStack(alignment: .center) {
                 Text("Контакты")
                     .font(.title2).bold()
@@ -267,23 +275,30 @@ private struct ContactsMainContent: View {
                         .foregroundColor(.accentColor)
                         .frame(width: 44, height: 44)
                         .background(
-                            Circle().fill(Color.white.opacity(0.3))
+                            Circle()
+                                .fill(Color.white.opacity(0.3))
                                 .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
                         )
                 }
                 .buttonStyle(ActionButtonStyle())
                 Spacer(minLength: 8)
-                Button(action: { showSearchBar = true }) {
+                // Кнопка поиска (лупа) с новым стилем
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isSearchActive.toggle()
+                    }
+                }) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(isSearchActive ? .white : .accentColor)
+                        .frame(width: 24, height: 24)
                         .frame(width: 44, height: 44)
                         .background(
-                            Circle().fill(Color.white.opacity(0.3))
-                                .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
+                            Circle()
+                                .fill(isSearchActive ? Color.accentColor : Color.white.opacity(0.3))
+                                .shadow(color: Color.black.opacity(isSearchActive ? 0.3 : 0.08), radius: 4, x: 0, y: 1)
                         )
                 }
-                .buttonStyle(ActionButtonStyle())
                 Spacer(minLength: 8)
                 Button(action: { path.append("add") }) {
                     Image(systemName: "plus")
@@ -291,8 +306,9 @@ private struct ContactsMainContent: View {
                         .foregroundColor(.accentColor)
                         .frame(width: 44, height: 44)
                         .background(
-                            Circle().fill(Color.white.opacity(0.3))
-                            .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
+                            Circle()
+                                .fill(Color.white.opacity(0.3))
+                                .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
                         )
                 }
                 .buttonStyle(ActionButtonStyle())
@@ -300,6 +316,59 @@ private struct ContactsMainContent: View {
             .padding(.vertical, 12)
             .padding(.horizontal, 20)
 
+            // Строка поиска с плавной анимацией, как в HolidayDetailView
+            ZStack {
+                if isSearchActive {
+                    HStack(spacing: 8) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.secondary)
+                                .frame(width: 24, height: 24)
+                            TextField("Поиск", text: $searchText)
+                                .textFieldStyle(PlainTextFieldStyle())
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+                                .frame(height: 24)
+                            if !searchText.isEmpty {
+                                Button(action: { searchText = "" }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.secondary)
+                                        .frame(width: 24, height: 24)
+                                }
+                                .frame(width: 24, height: 24)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(
+                            Color.white.opacity(0.7)
+                                .blur(radius: 0.3)
+                                .shadow(color: Color.black.opacity(0.09), radius: 10, y: 2)
+                        )
+                        .cornerRadius(12)
+                        .animation(.easeInOut(duration: 0.22), value: isSearchActive)
+                        // Кнопка "Отмена" справа
+                        Button("Отмена") {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                isSearchActive = false
+                            }
+                            searchText = ""
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        }
+                        .foregroundColor(.accentColor)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        .animation(.easeInOut(duration: 0.22), value: isSearchActive)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 0)
+                    .frame(height: 44)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.25), value: isSearchActive)
+
+            // Чипы фильтра под строкой поиска, с паддингом .horizontal 16, сверху около 12
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(chipFilter.allRelations, id: \.self) { relation in
@@ -322,47 +391,19 @@ private struct ContactsMainContent: View {
                         }
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 16)
                 .padding(.bottom, 3)
                 .padding(.top, 0)
             }
+            .padding(.top, 12)
 
-            if showSearchBar {
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
-                    TextField("Поиск", text: $searchText)
-                        .textFieldStyle(PlainTextFieldStyle())
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                    if !searchText.isEmpty {
-                        Button(action: { searchText = "" }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    Button("Отмена") {
-                        showSearchBar = false
-                        searchText = ""
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                    }
-                    .foregroundColor(.accentColor)
-                }
-                .padding(10)
-                .background(
-                    Color.white.opacity(0.7)
-                        .blur(radius: 0.3)
-                        .shadow(color: .black.opacity(0.09), radius: 10, y: 2)
-                )
-                .cornerRadius(12)
-                .padding(.horizontal, 18)
-                .padding(.top, 2)
-                .padding(.bottom, 6)
-            }
-
+            // Список контактов под фильтрами
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    ForEach(sectionedContacts, id: \.section) { section in
+                    ForEach(
+                        isSearchActive ? sectionedContactsWithSearch : sectionedContacts,
+                        id: \.section
+                    ) { section in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(BirthdaySectionsViewModel(contacts: []).sectionTitle(section.section))
                                 .font(.callout).bold()
@@ -395,5 +436,101 @@ private struct ContactsMainContent: View {
                 .padding(.bottom, 40)
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: isSearchActive)
+    }
+}
+
+// MARK: - SearchContactsView
+private struct SearchContactsView: View {
+    @ObservedObject var vm: ContactsViewModel
+    @ObservedObject var chipFilter: ChipRelationFilter
+    var onDismiss: () -> Void
+    @State private var searchText: String = ""
+
+    // Фильтрация по тексту и чипам
+    private var filteredContacts: [Contact] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let base = vm.sortedContacts.filter {
+            query.isEmpty ? true :
+                $0.name.lowercased().contains(query) ||
+                ($0.surname?.lowercased().contains(query) ?? false) ||
+                ($0.nickname?.lowercased().contains(query) ?? false)
+        }
+        return chipFilter.filter(contacts: base)
+    }
+
+    private var sectionedContacts: [SectionedContacts] {
+        BirthdaySectionsViewModel(contacts: filteredContacts).sectionedContacts()
+    }
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                        .frame(width: 24, height: 24)
+                        .background(Color.clear)
+                    TextField("Поиск", text: $searchText)
+                        .textFieldStyle(PlainTextFieldStyle())
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .frame(height: 24)
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                                .frame(width: 24, height: 24)
+                        }
+                        .frame(width: 24, height: 24)
+                    }
+                    Button("Отмена") {
+                        onDismiss()
+                        searchText = ""
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                    .foregroundColor(.accentColor)
+                }
+                .padding(10)
+                .background(
+                    Color.white.opacity(0.7)
+                        .blur(radius: 0.3)
+                        .shadow(color: .black.opacity(0.09), radius: 10, y: 2)
+                )
+                .cornerRadius(12)
+                .padding(.horizontal, 18)
+                .padding(.top, 14)
+                .padding(.bottom, 6)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .animation(.easeInOut(duration: 0.3), value: searchText)
+
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        ForEach(sectionedContacts, id: \.section) { section in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(BirthdaySectionsViewModel(contacts: []).sectionTitle(section.section))
+                                    .font(.callout).bold()
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 20)
+                                    .padding(.top, 10)
+                                ForEach(section.contacts) { contact in
+                                    NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
+                                        ContactCardView(contact: contact)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.top, 10)
+                    .padding(.bottom, 40)
+                }
+            }
+            .navigationBarHidden(true)
+            .background(
+                AppBackground()
+            )
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .animation(.easeInOut(duration: 0.33), value: searchText)
     }
 }

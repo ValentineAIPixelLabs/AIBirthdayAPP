@@ -17,18 +17,15 @@ struct GreetingFullScreenView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.blue.opacity(0.18),
-                    Color.purple.opacity(0.16),
-                    Color.teal.opacity(0.14)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            AppBackground()
 
             VStack(alignment: .leading, spacing: 0) {
+
+                Text("Debug - isLoading: \(isLoading ? "true" : "false"), localGreeting: \(localGreeting ?? "nil"), errorMessage: \(errorMessage ?? "nil")")
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .padding()
+
                 // TopBar
                 HStack {
                     Button(action: { isPresented = false }) {
@@ -119,14 +116,23 @@ struct GreetingFullScreenView: View {
             .padding(.top, 0)
         }
         .sheet(isPresented: $showHistorySheet) {
-            GreetingsHistoryFullScreenView(isPresented: $showHistorySheet, greetings: greetings, onDelete: onDelete)
+            GreetingsHistoryFullScreenView(isPresented: $showHistorySheet, greetings: $greetings)
+                .onAppear {
+                    debugPrint("Showing history sheet")
+                }
         }
         .alert("Текст поздравления скопирован", isPresented: $isCopyAlertPresented) {
             Button("OK", role: .cancel) { }
         }
+        .onAppear {
+            if isCopyAlertPresented {
+                debugPrint("Showing copy alert")
+            }
+        }
     }
 
     private func handleGenerate() {
+        print("handleGenerate() called")
         errorMessage = nil
         localGreeting = nil
         guard !isLoading else { return }
@@ -146,12 +152,15 @@ struct GreetingFullScreenView: View {
             DispatchQueue.main.async {
                 switch result {
                 case .success(let greeting):
+                    print("Generation succeeded with greeting: \(greeting)")
                     self.localGreeting = greeting
                     self.onSaveGreeting(greeting)
                 case .failure(let error):
+                    print("Generation failed with error: \(error.localizedDescription)")
                     self.errorMessage = "Ошибка генерации: \(error.localizedDescription)"
                 }
                 self.isLoading = false
+                print("isLoading set to false")
             }
         }
     }

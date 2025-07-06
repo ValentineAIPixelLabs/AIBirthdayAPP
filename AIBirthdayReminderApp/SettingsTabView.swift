@@ -55,7 +55,7 @@ struct SettingsTabView: View {
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Настройки")
-            .background(.ultraThinMaterial)
+            .background(AppBackground())
             .sheet(isPresented: $showNotificationSettings) {
                 NavigationStack {
                     NotificationSettingsView(settings: $vm.globalNotificationSettings)

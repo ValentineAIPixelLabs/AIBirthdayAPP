@@ -52,8 +52,7 @@ struct AddContactView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(gradient: Gradient(colors: [Color.blue.opacity(0.18), Color.purple.opacity(0.16), Color.teal.opacity(0.14)]), startPoint: .topLeading, endPoint: .bottomTrailing)
-                .ignoresSafeArea()
+            AppBackground()
             
             Form {
                 Section {

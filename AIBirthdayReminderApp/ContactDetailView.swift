@@ -47,16 +47,7 @@ struct ContactDetailView: View {
         GeometryReader { geo in
             if let contact = contact {
                 ZStack {
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            Color.blue.opacity(0.18),
-                            Color.purple.opacity(0.16),
-                            Color.teal.opacity(0.14)
-                        ]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .ignoresSafeArea()
+                    AppBackground()
                     ZStack(alignment: .top) {
                         ScrollView(.vertical, showsIndicators: false) {
                             VStack(spacing: 20) {
@@ -171,25 +162,10 @@ struct ContactDetailView: View {
             loadHistories()
         }
         .fullScreenCover(isPresented: $showGreetingScreen) {
-            if let contact = contact {
-                GreetingFullScreenView(
-                    isPresented: $showGreetingScreen,
-                    greetings: $greetingsHistory,
-                    onDelete: { idx in
-                        greetingsHistory.remove(at: idx)
-                        saveGreetingsHistory()
-                    },
-                    onSaveGreeting: { newGreeting in
-                        greetingsHistory.insert(newGreeting, at: 0)
-                        saveGreetingsHistory()
-                    },
-                    contact: contact,
-                    apiKey: apiKey,
-                    isTestMode: isTestMode
-                )
-            } else {
-                EmptyView()
-            }
+            GreetingsHistoryFullScreenView(
+                isPresented: $showGreetingScreen,
+                greetings: $greetingsHistory
+            )
         }
         .fullScreenCover(isPresented: $showCardScreen) {
             if let contact = contact {

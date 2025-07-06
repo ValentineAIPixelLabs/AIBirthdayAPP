@@ -2,21 +2,11 @@ import SwiftUI
 
 struct GreetingsHistoryFullScreenView: View {
     @Binding var isPresented: Bool
-    var greetings: [String]
-    var onDelete: (Int) -> Void
+    @Binding var greetings: [String]
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.blue.opacity(0.18),
-                    Color.purple.opacity(0.16),
-                    Color.teal.opacity(0.14)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            AppBackground()
 
             ScrollView {
                 LazyVStack(spacing: 16) {
@@ -36,7 +26,7 @@ struct GreetingsHistoryFullScreenView: View {
                                 UIPasteboard.general.string = greeting
                             }
                             Button("Удалить", role: .destructive) {
-                                onDelete(idx)
+                                greetings.remove(at: idx)
                             }
                         }
                         .padding(.horizontal, 12)

@@ -10,10 +10,6 @@ struct HolidaysView: View {
     @StateObject private var viewModel = HolidaysViewModel()
     
     @State private var showAddHoliday = false
-    @State private var newTitle = ""
-    @State private var newDate = Date()
-    @State private var newType: HolidayType = .personal
-    @State private var newIcon = ""
     @State private var showCalendarImport = false
     private let calendarImporter = HolidayCalendarImporter()
     @State private var isImporting = false
@@ -24,25 +20,12 @@ struct HolidaysView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.blue.opacity(0.18),
-                        Color.purple.opacity(0.16),
-                        Color.teal.opacity(0.14)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                AppBackground()
                 HolidayContent(
                     viewModel: viewModel,
                     sortMode: $sortMode,
                     selectedHoliday: $selectedHoliday,
                     showAddHoliday: $showAddHoliday,
-                    newTitle: $newTitle,
-                    newDate: $newDate,
-                    newType: $newType,
-                    newIcon: $newIcon,
                     isImporting: $isImporting,
                     calendarImportError: $calendarImportError,
                     calendarImporter: calendarImporter
@@ -60,17 +43,14 @@ extension HolidaysView {
         @Binding var sortMode: HolidaySortMode
         @Binding var selectedHoliday: Holiday?
         @Binding var showAddHoliday: Bool
-        @Binding var newTitle: String
-        @Binding var newDate: Date
-        @Binding var newType: HolidayType
-        @Binding var newIcon: String
         @Binding var isImporting: Bool
         @Binding var calendarImportError: String?
         let calendarImporter: HolidayCalendarImporter
         
         @State private var searchText: String = ""
-        @State private var selectedFilter: String = "Все праздники"
         @State private var isSearchActive: Bool = false
+        @State private var selectedFilter: String = "Все праздники"
+        @State private var holidayToEdit: Holiday? = nil
         
         var holidayTypes: [String] {
             let types = Set(viewModel.holidays.map { $0.type.title })
@@ -134,12 +114,32 @@ extension HolidaysView {
 
         var body: some View {
             VStack(spacing: 0) {
-                // ... (верхняя панель и фильтры без изменений)
+                // Верхняя панель и фильтры без изменений, добавлена кнопка поиска
                 HStack(alignment: .center) {
                     Text("Праздники")
                         .font(.title2).bold()
                         .foregroundColor(.primary)
                     Spacer()
+                    // Кнопка поиска
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isSearchActive.toggle()
+                            if !isSearchActive {
+                                searchText = ""
+                            }
+                        }
+                    }) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(isSearchActive ? .white : .accentColor)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                Circle()
+                                    .fill(isSearchActive ? Color.accentColor : Color.white.opacity(0.3))
+                                    .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
+                            )
+                    }
+                    .accessibilityLabel("Поиск")
                     if isImporting {
                         ProgressView()
                             .frame(width: 44, height: 44)
@@ -180,25 +180,6 @@ extension HolidaysView {
                         }
                     }
                     Button(action: {
-                        withAnimation(.easeInOut(duration: 0.18)) {
-                            isSearchActive.toggle()
-                        }
-                        if !isSearchActive {
-                            searchText = ""
-                        }
-                    }) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(.accentColor)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                Circle()
-                                    .fill(Color.white.opacity(0.3))
-                                    .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
-                            )
-                    }
-                    .accessibilityLabel("Поиск")
-                    Button(action: {
                         showAddHoliday = true
                     }) {
                         Image(systemName: "plus")
@@ -215,12 +196,67 @@ extension HolidaysView {
                 }
                 .padding(.horizontal, 14)
                 .padding(.bottom, 12)
-                
-                VStack(spacing: 0) {
-                    // ... (чипы-фильтры и поисковая строка без изменений)
-                    // ...
-                    // Поисковая строка и фильтры остаются такими же, как у тебя
-                    // ...
+
+                // Поисковое поле
+                if isSearchActive {
+                    HStack {
+                        TextField("Поиск...", text: $searchText)
+                            .padding(10)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                            .font(.body)
+                            .overlay(
+                                HStack {
+                                    Spacer()
+                                    if !searchText.isEmpty {
+                                        Button(action: {
+                                            searchText = ""
+                                        }) {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .padding(.trailing, 8)
+                                    }
+                                }
+                            )
+                        // Кнопка "Отмена" для закрытия поиска
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isSearchActive = false
+                                searchText = ""
+                            }
+                        }) {
+                            Text("Отмена")
+                                .foregroundColor(.accentColor)
+                                .padding(.leading, 4)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                // Фильтр-чипы (оставляем без изменений)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(holidayTypes, id: \.self) { type in
+                            Button(action: {
+                                selectedFilter = type
+                            }) {
+                                Text(type)
+                                    .font(.subheadline)
+                                    .foregroundColor(selectedFilter == type ? .white : .primary)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(selectedFilter == type ? Color.accentColor : Color(.systemGray6))
+                                    .clipShape(Capsule())
+                                    .shadow(color: selectedFilter == type ? Color.accentColor.opacity(0.18) : .clear, radius: 4, y: 1)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 4)
                 }
 
                 if !filteredVisibleHolidays.isEmpty {
@@ -245,17 +281,23 @@ extension HolidaysView {
                                             .foregroundColor(.secondary)
                                             .padding(.leading, 20)
                                         ForEach(groupedHolidays[sectionKey] ?? [], id: \.id) { holiday in
-                                            HolidayCardView(holiday: holiday, viewModel: viewModel, selectedHoliday: $selectedHoliday)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .padding(.horizontal, 20)
-                                                .onTapGesture {
-                                                    selectedHoliday = holiday
+                                            HolidayCardView(
+                                                holiday: holiday,
+                                                viewModel: viewModel,
+                                                selectedHoliday: $selectedHoliday,
+                                                onEdit: { holiday in
+                                                    holidayToEdit = holiday
                                                 }
+                                            )
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.horizontal, 20)
+                                            .onTapGesture {
+                                                selectedHoliday = holiday
+                                            }
                                         }
                                     }
                                 }
-                                // Divider() // Удаляем Divider перед кнопкой
-                                // Кнопка показа скрытых праздников (новый стиль)
+                                // Кнопка показа скрытых праздников
                                 Button(action: {
                                     withAnimation(.easeInOut(duration: 0.22)) {
                                         showHiddenSection.toggle()
@@ -287,7 +329,6 @@ extension HolidaysView {
                                 // Скрытые праздники
                                 if showHiddenSection {
                                     Group {
-                                        // Добавляем идентификатор секции скрытых праздников
                                         EmptyView()
                                     }
                                     .id("hiddenHolidaysSection")
@@ -299,9 +340,17 @@ extension HolidaysView {
                                             .frame(maxWidth: .infinity, alignment: .center)
                                     } else {
                                         ForEach(filteredHiddenHolidays, id: \.id) { holiday in
-                                            HolidayCardView(holiday: holiday, viewModel: viewModel, selectedHoliday: $selectedHoliday, isHidden: true)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .padding(.horizontal, 20)
+                                            HolidayCardView(
+                                                holiday: holiday,
+                                                viewModel: viewModel,
+                                                selectedHoliday: $selectedHoliday,
+                                                isHidden: true,
+                                                onEdit: { holiday in
+                                                    holidayToEdit = holiday
+                                                }
+                                            )
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.horizontal, 20)
                                         }
                                     }
                                 }
@@ -310,6 +359,7 @@ extension HolidaysView {
                             .padding(.bottom, 60)
                         }
                         .id(viewModel.holidays.count)
+                        // .searchable(text: $searchText) // удалено, реализован кастомный поиск
                     }
                 } else {
                     VStack {
@@ -338,50 +388,24 @@ extension HolidaysView {
                 Text(calendarImportError ?? "")
             }
             .sheet(isPresented: $showAddHoliday) {
-                NavigationStack {
-                    Form {
-                        Section(header: Text("Основное")) {
-                            TextField("Название праздника", text: $newTitle)
-                            DatePicker("Дата", selection: $newDate, displayedComponents: .date)
-                            Picker("Тип", selection: $newType) {
-                                ForEach(HolidayType.allCases, id: \.self) { type in
-                                    Text(type.title).tag(type)
-                                }
-                            }
-                            TextField("Иконка (эмодзи)", text: $newIcon)
-                        }
-                    }
-                    .navigationTitle("Новый праздник")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Отмена") {
-                                showAddHoliday = false
-                            }
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Добавить") {
-                                let holiday = Holiday(
-                                    title: newTitle,
-                                    date: newDate,
-                                    type: newType,
-                                    icon: newIcon.isEmpty ? nil : newIcon,
-                                    isRegional: false,
-                                    isCustom: true,
-                                    relatedProfession: nil
-                                )
-                                viewModel.addHoliday(holiday)
-                                newTitle = ""
-                                newDate = Date()
-                                newType = .personal
-                                newIcon = ""
-                                showAddHoliday = false
-                            }.disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty)
-                        }
-                    }
+                AddHolidaysView(isPresented: $showAddHoliday) { holiday in
+                    viewModel.addHoliday(holiday)
                 }
             }
             .navigationDestination(item: $selectedHoliday) { holiday in
-                HolidayDetailView(holiday: holiday)
+                HolidayDetailView(holiday: holiday, vm: viewModel)
+            }
+            .navigationDestination(item: $holidayToEdit) { holiday in
+                EditHolidayView(
+                    holiday: holiday,
+                    onSave: { updatedHoliday in
+                        viewModel.updateHoliday(updatedHoliday)
+                        holidayToEdit = nil
+                    },
+                    onCancel: {
+                        holidayToEdit = nil
+                    }
+                )
             }
         }
     }
@@ -393,6 +417,7 @@ extension HolidaysView {
         @ObservedObject var viewModel: HolidaysViewModel
         @Binding var selectedHoliday: Holiday?
         var isHidden: Bool = false
+        var onEdit: ((Holiday) -> Void)? = nil
         @State private var isPressed = false
 
         var body: some View {
@@ -400,31 +425,11 @@ extension HolidaysView {
                 HStack(alignment: .center, spacing: 16) {
                     ZStack {
                         Circle()
-                            .fill(.thinMaterial)
-                            .overlay(
-                                Circle().stroke(Color.white.opacity(0.18), lineWidth: 1.2)
-                            )
-                            .clipShape(Circle())
-                            .shadow(color: .black.opacity(0.13), radius: 10, x: 0, y: 4)
+                            .fill(Color.white)
                             .frame(width: 64, height: 64)
-                        if let icon = holiday.icon, !icon.isEmpty {
-                            if isSingleEmoji(icon) {
-                                Text(icon)
-                                    .font(.system(size: 32))
-                            } else {
-                                Image(systemName: icon)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 28, height: 28)
-                                    .foregroundColor(colorForType(holiday.type))
-                            }
-                        } else {
-                            Image(systemName: "calendar")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 30, height: 30)
-                                .foregroundColor(.red)
-                        }
+                            .shadow(color: Color.black.opacity(0.10), radius: 6, x: 0, y: 2)
+                        Text((holiday.icon?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? holiday.icon!.trimmingCharacters(in: .whitespacesAndNewlines) : "🎉"))
+                            .font(.system(size: 32))
                     }
                     VStack(alignment: .leading, spacing: 6) {
                         Text(holiday.title)
@@ -483,7 +488,7 @@ extension HolidaysView {
                         Label("Скрыть", systemImage: "eye")
                     }
                     Button {
-                        selectedHoliday = holiday
+                        onEdit?(holiday)
                     } label: {
                         Label("Редактировать", systemImage: "pencil")
                     }
@@ -497,25 +502,7 @@ extension HolidaysView {
             formatter.setLocalizedDateFormatFromTemplate("d MMMM")
             return formatter.string(from: date)
         }
-        private func colorForType(_ type: HolidayType) -> Color {
-            switch type {
-            case .official:
-                return .blue
-            case .professional:
-                return .green
-            case .personal:
-                return .purple
-            case .religious:
-                return .orange
-            case .other:
-                return .gray
-            }
-        }
-        private func isSingleEmoji(_ string: String) -> Bool {
-            let scalars = string.unicodeScalars
-            return (scalars.count == 1 && scalars.first?.properties.isEmoji == true)
-                || (scalars.count == 2 && scalars.allSatisfy { $0.properties.isEmoji })
-        }
+        // colorForType и isSingleEmoji больше не используются
     }
 }
 
