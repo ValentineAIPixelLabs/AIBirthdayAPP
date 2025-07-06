@@ -492,7 +492,7 @@ private struct ContactsMainContent: View {
                                         .animation(.spring(response: 0.2, dampingFraction: 0.6), value: highlightedContactID)
                                         .contextMenu {
                                             Button("Редактировать") {
-                                                if let index = vm.contacts.firstIndex(where: { $0.id == contact.id }) {
+                                                if vm.contacts.contains(where: { $0.id == contact.id }) {
                                                     DispatchQueue.main.async {
                                                         vm.editingContact = contact
                                                         vm.isEditingContactPresented = true
