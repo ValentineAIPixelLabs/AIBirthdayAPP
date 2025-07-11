@@ -57,21 +57,10 @@ struct ContactCardView: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.88)
                         if let birthday = contact.birthday, isValidBirthday(birthday) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Через \(daysUntilNextBirthday(from: birthday)) \(daysSuffix(for: daysUntilNextBirthday(from: birthday))) · \(dateStringRu(nextBirthdayDate(from: birthday)))")
-                                    .font(CardStyle.Subtitle.font)
-                                    .foregroundColor(CardStyle.Subtitle.color)
-                                let weekday = {
-                                    let formatter = DateFormatter()
-                                    formatter.locale = Locale(identifier: "ru_RU")
-                                    formatter.dateFormat = "EEEE"
-                                    let raw = formatter.string(from: nextBirthdayDate(from: birthday))
-                                    return raw.prefix(1).uppercased() + raw.dropFirst()
-                                }()
-                                Text(weekday)
-                                    .font(CardStyle.Subtitle.font)
-                                    .foregroundColor(CardStyle.Subtitle.color)
-                            }
+                            Text(birthdayDateDetails(for: birthday))
+                                .font(CardStyle.Subtitle.font)
+                                .foregroundColor(CardStyle.Subtitle.color)
+                                .multilineTextAlignment(.leading)
                         } else {
                             Text("Дата рождения не указана")
                                 .font(CardStyle.Subtitle.font)
@@ -80,9 +69,9 @@ struct ContactCardView: View {
                     }
                     Spacer()
                 }
-                .padding(.bottom, 12)
+                .padding(.bottom, 5)
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 7)
 
                 Button(action: {
                     path.append("congrats_\(contact.id.uuidString)")
