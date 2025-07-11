@@ -1,6 +1,6 @@
 import UIKit
 import SwiftUI
-//import CardStyle
+
 
 struct ActivityViewController: UIViewControllerRepresentable {
     let activityItems: [Any]
@@ -56,61 +56,50 @@ struct ContactCongratsView: View {
                         .preference(key: ScrollOffsetPreferenceKey.self, value: geo.frame(in: .named("scroll")).minY)
                 }
                 .frame(height: 0)
-                VStack(spacing: 0) {
-                    if headerVisible {
-                        HStack {
-                            Button(action: { dismiss() }) {
-                                Image(systemName: "chevron.left")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                    .frame(width: 44, height: 44)
-                                    .background(Color(.systemGray5), in: Circle())
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        if headerVisible {
+                            topButtons(geo: geo)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                        VStack(spacing: 20) {
+                            // Header
+                            VStack(spacing: 8) {
+                                contactBlock(contact: contact)
+                                
                             }
-                            Spacer()
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.top, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    }
+                            .frame(maxWidth: 500)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 15)
 
-                    VStack(spacing: 20) {
-                        // Header
-                        VStack(spacing: 8) {
-                            Text(contact.name)
-                                .font(.largeTitle)
-                                .fontWeight(.bold)
-                                .padding(.top, 16)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .padding(.horizontal)
-
-                        // Style Picker
-                        Picker("Стиль поздравления", selection: $selectedStyle) {
-                            ForEach(CongratsStyle.allCases) { style in
-                                Text(style.rawValue).tag(style)
-                            }
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
-                        .padding(.horizontal)
-
-                        // Generate Buttons
-                        generateButtons()
-
-                        // History Sections
-                        VStack(spacing: 24) {
-                            ContactCongratsHistorySection(
-                                congratsHistory: congratsHistory,
-                                onDelete: { item in
-                                    if let idx = congratsHistory.firstIndex(where: { $0.id == item.id }) {
-                                        congratsHistory.remove(at: idx)
-                                        congratsHistoryStore.saveHistory(congratsHistory)
-                                    }
+                            // Style Picker
+                            /*  Picker("Стиль поздравления", selection: $selectedStyle) {
+                                ForEach(CongratsStyle.allCases) { style in
+                                    Text(style.rawValue).tag(style)
                                 }
-                            )
-                            CardHistorySection(cardStore: cardStore)
+                            }
+                            .pickerStyle(SegmentedPickerStyle())
+                            .padding(.horizontal)*/
+
+                            // Generate Buttons
+                            generateButtons()
+
+                            // History Sections
+                            VStack(spacing: 24) {
+                                ContactCongratsHistorySection(
+                                    congratsHistory: congratsHistory,
+                                    onDelete: { item in
+                                        if let idx = congratsHistory.firstIndex(where: { $0.id == item.id }) {
+                                            congratsHistory.remove(at: idx)
+                                            congratsHistoryStore.saveHistory(congratsHistory)
+                                        }
+                                    }
+                                )
+                                CardHistorySection(cardStore: cardStore)
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 32)
                         }
-                        .padding(.horizontal)
-                        .padding(.bottom, 32)
                     }
                 }
             }
@@ -120,7 +109,6 @@ struct ContactCongratsView: View {
                     headerVisible = offset > -32
                 }
             }
-            
         }
         .onAppear {
             congratsHistory = congratsHistoryStore.loadHistory()
@@ -149,6 +137,26 @@ struct ContactCongratsView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+        .navigationBarBackButtonHidden(true)
+        .navigationBarHidden(true)
+    }
+
+    // MARK: - Top Buttons
+    private func topButtons(geo: GeometryProxy) -> some View {
+        HStack {
+            // Левая кнопка "Назад"
+            Button(action: { dismiss() }) {
+                Image(systemName: "chevron.backward")
+                    .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
+                    .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
+                    .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
+                    .foregroundColor(AppButtonStyle.Circular.iconColor)
+                    .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, geo.safeAreaInsets.top + 8)
     }
 
     // MARK: - Generate Buttons
@@ -171,18 +179,52 @@ struct ContactCongratsView: View {
                     }
                 }
             }) {
-                Label("Новое поздравление", systemImage: "wand.and.stars")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                HStack(alignment: .center, spacing: 10) {
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 24)
+                    Text("Сгенерировать\nпоздравление")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+                }
+                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                .padding(.vertical, 6)
+                .padding(.leading, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: AppButtonStyle.Congratulate.cornerRadius, style: .continuous)
+                        .fill(AppButtonStyle.Congratulate.backgroundColor)
+                        .shadow(color: AppButtonStyle.Congratulate.shadow, radius: AppButtonStyle.Congratulate.shadowRadius, y: 2)
+                )
             }
             .buttonStyle(.plain)
             .opacity(isLoading ? 0.6 : 1)
             .disabled(isLoading)
 
             Button(action: handleGenerate) {
-                Label("Новая открытка", systemImage: "photo.on.rectangle.angled")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                HStack(alignment: .center, spacing: 10) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 24)
+                    Text("Сгенерировать\nоткрытку")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+                }
+                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                .padding(.vertical, 6)
+                .padding(.leading, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: AppButtonStyle.Congratulate.cornerRadius, style: .continuous)
+                        .fill(AppButtonStyle.Congratulate.backgroundColor)
+                        .shadow(color: AppButtonStyle.Congratulate.shadow, radius: AppButtonStyle.Congratulate.shadowRadius, y: 2)
+                )
             }
             .buttonStyle(.plain)
             .opacity(isLoading ? 0.6 : 1)
@@ -216,9 +258,7 @@ struct ContactCongratsView: View {
     }
 
 
-    // MARK: - Storage for Congrats History
-    // Removed: All UserDefaults and save/load functions for congrats history.
-
+   
 }
 
 // MARK: - ContactCongratsHistorySection
@@ -230,7 +270,7 @@ private struct ContactCongratsHistorySection: View {
         Section {
             CardPresetView {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("История поздравлений")
+                    Text("Поздравления")
                         .font(.headline)
                         .padding(.bottom, 4)
                     if congratsHistory.isEmpty {
@@ -317,6 +357,30 @@ private struct CongratsHistoryItemView: View {
         Divider()
     }
 }
+// MARK: - Contact Block
+private func contactBlock(contact: Contact) -> some View {
+    Group {
+            HStack(alignment: .top, spacing: 12) {
+                Text("Кому: " + contact.name)
+                    .font(CardStyle.Detail.font)
+                    .foregroundColor(.primary)
+                Spacer()
+            }
+            .padding(.vertical, CardStyle.Detail.verticalPadding)
+            .padding(.horizontal, CardStyle.Detail.innerHorizontalPadding)
+            .background(
+                RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
+                    .fill(CardStyle.backgroundColor)
+                    .shadow(color: CardStyle.shadowColor, radius: CardStyle.shadowRadius, y: CardStyle.shadowYOffset)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
+                            .stroke(CardStyle.borderColor, lineWidth: 0.7)
+                    )
+            )
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        
+    }
+}
 
 // MARK: - CardHistorySection (Horizontal Scroll Cards)
 struct CardHistorySection: View {
@@ -327,7 +391,7 @@ struct CardHistorySection: View {
         Section {
             CardPresetView {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("История открыток")
+                    Text("Открытки")
                         .font(.headline)
                         .padding(.bottom, 4)
                     if cardStore.savedCards.isEmpty {

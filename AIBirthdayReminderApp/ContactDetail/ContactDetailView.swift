@@ -1,7 +1,6 @@
 import SwiftUI
-//import CardStyle
 import UIKit
-//import ButtonStyle
+
 
 
 struct ContactDetailView: View {
@@ -404,6 +403,5 @@ struct ContactDetailView: View {
         .padding(.top, geo.safeAreaInsets.top + 8)
     }
 
-    // Удалены handleOnAppear, handleGreetingDelete, handleCardDelete
-
+    
 }
