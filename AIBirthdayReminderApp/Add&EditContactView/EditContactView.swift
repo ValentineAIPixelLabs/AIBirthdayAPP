@@ -10,8 +10,8 @@ struct EditContactView: View {
     @State private var name: String
     @State private var surname: String
     @State private var nickname: String
-    @State private var relation: String
-    @State private var gender: String
+    @State private var relation: String = "Брат"
+    @State private var gender: String = "Мужской"
     @State private var birthday: Birthday?
 
     @State private var occupation: String
@@ -59,8 +59,8 @@ struct EditContactView: View {
         _name = State(initialValue: contact.name)
         _surname = State(initialValue: contact.surname ?? "")
         _nickname = State(initialValue: contact.nickname ?? "")
-        _relation = State(initialValue: contact.relationType ?? "")
-        _gender = State(initialValue: contact.gender ?? "")
+        _relation = State(initialValue: contact.relationType ?? relations.first ?? "Брат")
+        _gender = State(initialValue: contact.gender ?? genders.first ?? "Мужской")
         _birthday = State(initialValue: contact.birthday)
         _occupation = State(initialValue: contact.occupation ?? "")
         _hobbies = State(initialValue: contact.hobbies ?? "")

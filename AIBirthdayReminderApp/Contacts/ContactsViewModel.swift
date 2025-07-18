@@ -1,4 +1,5 @@
 import Foundation
+import CoreData
 
 class ContactsViewModel: ObservableObject {
     enum AppColorScheme: String, CaseIterable, Identifiable, Codable {
@@ -28,8 +29,58 @@ class ContactsViewModel: ObservableObject {
         }
     }
     
-    private let storageKey = "contacts_data_v1"
+    // Мульти-выделение для удаления
+    @Published var isSelectionMode: Bool = false
+    @Published var selectedContactIDs: Set<UUID> = []
+
+    /// Войти в режим выделения
+    func enterSelectionMode() {
+        isSelectionMode = true
+        selectedContactIDs = []
+    }
+
+    /// Выйти из режима выделения
+    func exitSelectionMode() {
+        isSelectionMode = false
+        selectedContactIDs = []
+    }
+
+    /// Переключить выделение контакта
+    func toggleSelection(for contact: Contact) {
+        if selectedContactIDs.contains(contact.id) {
+            selectedContactIDs.remove(contact.id)
+        } else {
+            selectedContactIDs.insert(contact.id)
+        }
+    }
+
+    /// Отметить все контакты
+    func selectAllContacts() {
+        selectedContactIDs = Set(contacts.map { $0.id })
+    }
+
+    /// Снять выделение со всех
+    func deselectAllContacts() {
+        selectedContactIDs = []
+    }
+
+    /// Удалить выделенные контакты
+    func deleteSelectedContacts() {
+        let idsToDelete = selectedContactIDs
+        for id in idsToDelete {
+            if let contact = contacts.first(where: { $0.id == id }) {
+                NotificationManager.shared.removeBirthdayNotifications(for: contact)
+                deleteContactFromCoreData(contact.id)
+            }
+        }
+        contacts.removeAll { idsToDelete.contains($0.id) }
+        selectedContactIDs = []
+        isSelectionMode = false
+        print("Удалены выделенные контакты: \(idsToDelete)")
+    }
+    
     private let notificationSettingsKey = "globalNotificationSettings"
+    private let context = CoreDataManager.shared.context
     
     var sortedContacts: [Contact] {
         contacts.sorted(by: {
@@ -45,59 +96,149 @@ class ContactsViewModel: ObservableObject {
     }
     
     init() {
-        load()
         loadNotificationSettings()
         if let stored = UserDefaults.standard.string(forKey: "colorScheme"),
            let scheme = AppColorScheme(rawValue: stored) {
             colorScheme = scheme
         }
+        loadContactsFromCoreData()
     }
     
     func addContact(_ contact: Contact) {
         contacts.append(contact)
-        save()
+        saveContactToCoreData(contact)
         NotificationManager.shared.scheduleBirthdayNotifications(for: contact, settings: contact.notificationSettings)
+        print("Добавлен контакт: \(contact.name), id: \(contact.id)")
     }
     
     func removeContact(at offsets: IndexSet) {
         for index in offsets {
             let contact = contacts[index]
             NotificationManager.shared.removeBirthdayNotifications(for: contact)
+            deleteContactFromCoreData(contact.id)
+            print("Удалён контакт: \(contact.name), id: \(contact.id)")
         }
         contacts.remove(atOffsets: offsets)
-        save()
     }
     
     func removeContact(_ contact: Contact) {
         removeContactById(contact.id)
-    }
-    
-    private func save() {
-        if let encoded = try? JSONEncoder().encode(contacts) {
-            UserDefaults.standard.set(encoded, forKey: storageKey)
-        }
-    }
-    
-    private func load() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
-           let decoded = try? JSONDecoder().decode([Contact].self, from: data) {
-            contacts = decoded
-        }
+        print("Удалён контакт по id: \(contact.id)")
     }
     
     func updateContact(_ updated: Contact) {
         if let idx = contacts.firstIndex(where: { $0.id == updated.id }) {
             contacts[idx] = updated
             contacts = contacts
-            save()
+            saveContactToCoreData(updated)
             NotificationManager.shared.scheduleBirthdayNotifications(for: updated, settings: updated.notificationSettings)
+            print("Обновлён контакт: \(updated.name), id: \(updated.id)")
         }
     }
     
     func removeContactById(_ id: UUID) {
         if let idx = contacts.firstIndex(where: { $0.id == id }) {
             contacts.remove(at: idx)
-            save()
+            deleteContactFromCoreData(id)
+            print("Контакт удалён из массива и CoreData: \(id)")
+        }
+    }
+    
+    private func loadContactsFromCoreData() {
+        let fetchRequest: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+        if let entities = try? context.fetch(fetchRequest) {
+            contacts = entities.compactMap { entity in
+                Contact(
+                    id: entity.id ?? UUID(),
+                    name: entity.name ?? "",
+                    surname: entity.surname,
+                    nickname: entity.nickname,
+                    relationType: entity.relationType,
+                    gender: entity.gender,
+                    birthday: {
+                        let day = Int(entity.birthdayDay)
+                        let month = Int(entity.birthdayMonth)
+                        let year = Int(entity.birthdayYear)
+                        if day != 0 && month != 0 {
+                            return Birthday(
+                                day: day,
+                                month: month,
+                                year: year != 0 ? year : nil
+                            )
+                        }
+                        return nil
+                    }(),
+                    notificationSettings: NotificationSettings(
+                        enabled: entity.notificationEnabled,
+                        daysBefore: [Int(entity.notificationDaysBefore)],
+                        hour: Int(entity.notificationHour),
+                        minute: Int(entity.notificationMinute)
+                    ),
+                    imageData: entity.imageData,
+                    emoji: entity.emoji,
+                    occupation: entity.occupation,
+                    hobbies: entity.hobbies,
+                    leisure: entity.leisure,
+                    additionalInfo: entity.additionalInfo,
+                    phoneNumber: entity.phoneNumber,
+                    congratsHistory: [],
+                    cardHistory: []
+                )
+            }
+            print("Загружено контактов из CoreData: \(contacts.count)")
+            contacts.forEach { print("Contact: \($0.name), id: \($0.id)") }
+        } else {
+            print("Не удалось загрузить контакты из CoreData")
+        }
+    }
+    
+    private func saveContactToCoreData(_ contact: Contact) {
+        let fetchRequest: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "id == %@", contact.id as CVarArg)
+        let entity: ContactEntity
+        if let result = try? context.fetch(fetchRequest), let existing = result.first {
+            entity = existing
+        } else {
+            entity = ContactEntity(context: context)
+            entity.id = contact.id
+        }
+        entity.name = contact.name
+        entity.surname = contact.surname
+        entity.nickname = contact.nickname
+        entity.relationType = contact.relationType
+        entity.gender = contact.gender
+        if let day = contact.birthday?.day {
+            entity.birthdayDay = Int16(day)
+        }
+        if let month = contact.birthday?.month {
+            entity.birthdayMonth = Int16(month)
+        }
+        if let year = contact.birthday?.year {
+            entity.birthdayYear = Int16(year)
+        }
+        entity.emoji = contact.emoji
+        entity.imageData = contact.imageData
+        entity.occupation = contact.occupation
+        entity.hobbies = contact.hobbies
+        entity.leisure = contact.leisure
+        entity.additionalInfo = contact.additionalInfo
+        entity.phoneNumber = contact.phoneNumber
+        // notificationSettings
+        entity.notificationEnabled = contact.notificationSettings.enabled
+        entity.notificationDaysBefore = Int16(contact.notificationSettings.daysBefore.first ?? 1)
+        entity.notificationHour = Int16(contact.notificationSettings.hour)
+        entity.notificationMinute = Int16(contact.notificationSettings.minute)
+        try? context.save()
+        print("Контакт сохранён в CoreData: \(contact.name), id: \(contact.id)")
+    }
+    
+    private func deleteContactFromCoreData(_ id: UUID) {
+        let fetchRequest: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        if let result = try? context.fetch(fetchRequest), let entity = result.first {
+            context.delete(entity)
+            try? context.save()
+            print("Контакт удалён из CoreData: \(id)")
         }
     }
 
@@ -130,9 +271,11 @@ class ContactsViewModel: ObservableObject {
         ContactImportService.importAllContacts { [weak self] importedContacts in
             DispatchQueue.main.async {
                 self?.contacts.append(contentsOf: importedContacts)
-                self?.save()
                 importedContacts.forEach { contact in
                     NotificationManager.shared.scheduleBirthdayNotifications(for: contact, settings: contact.notificationSettings)
+                }
+                importedContacts.forEach { contact in
+                    self?.saveContactToCoreData(contact)
                 }
             }
         }

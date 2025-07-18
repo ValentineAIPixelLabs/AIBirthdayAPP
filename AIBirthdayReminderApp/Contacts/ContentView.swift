@@ -224,13 +224,16 @@ struct ContentView: View {
                         onDismiss: { showSearchContacts = false }
                     )
                 }
+            //тут не правильно вызывается редактирование кнотакта:
                 .sheet(isPresented: $vm.isEditingContactPresented, onDismiss: {
                     vm.editingContact = nil
                 }) {
                     if let editingContact = vm.editingContact {
                         EditContactView(vm: vm, contact: editingContact)
                     }
+                    
                 }
+                
                 .sheet(item: $contactForCongrats) { contact in
                     CongratulationActionSheet(
                         onGenerateText: {
@@ -344,6 +347,9 @@ private struct ContactsMainContent: View {
     @State private var isSearchActive: Bool = false
     @State private var searchText: String = ""
 
+    @State private var isSelectionMode: Bool = false
+    @State private var selectedContacts: Set<UUID> = []
+
     private var filteredContactsWithSearch: [Contact] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let base = vm.sortedContacts.filter {
@@ -366,6 +372,41 @@ private struct ContactsMainContent: View {
                     .foregroundColor(.primary)
                 Spacer()
                 HStack(spacing: AppHeaderStyle.buttonSpacing) {
+                    // Новая кнопка выбора/отмены с бейджем
+                    Button(action: {
+                        if isSelectionMode {
+                            isSelectionMode = false
+                            selectedContacts.removeAll()
+                        } else {
+                            isSelectionMode = true
+                        }
+                    }) {
+                        Image(systemName: isSelectionMode ? "xmark" : "checkmark.circle")
+                            .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
+                            .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
+                            .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
+                            .foregroundColor(isSelectionMode ? .red : AppButtonStyle.Circular.iconColor)
+                            .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
+                            .contentShape(Circle())
+                            .accessibilityLabel(isSelectionMode ? "Отмена" : "Выбрать")
+                    }
+                    .overlay(
+                        Group {
+                            if !isSelectionMode {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.red)
+                                        .frame(width: 20, height: 20)
+                                    Text("\(filteredContactsWithSearch.count)")
+                                        .foregroundColor(.white)
+                                        .font(.system(size: 12, weight: .bold))
+                                }
+                                .offset(x: 15, y: -15)
+                            }
+                        },
+                        alignment: .topTrailing
+                    )
+                    // Остальные кнопки
                     Button(action: { showAPIKeySheet = true }) {
                         Image(systemName: "key")
                             .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
@@ -401,6 +442,29 @@ private struct ContactsMainContent: View {
             .frame(height: AppHeaderStyle.minHeight)
             .padding(.top, AppHeaderStyle.topPadding)
             .padding(.horizontal, 20)
+
+            if isSelectionMode {
+                HStack(spacing: 20) {
+                    Button(selectedContacts.count == filteredContactsWithSearch.count ? "Снять все" : "Выделить все") {
+                        if selectedContacts.count == filteredContactsWithSearch.count {
+                            selectedContacts.removeAll()
+                        } else {
+                            selectedContacts = Set(filteredContactsWithSearch.map { $0.id })
+                        }
+                    }
+                    .foregroundColor(.accentColor)
+                    Button("Удалить") {
+                        vm.deleteContacts(with: selectedContacts)
+                        selectedContacts.removeAll()
+                        isSelectionMode = false
+                    }
+                    .foregroundColor(.red)
+                    .disabled(selectedContacts.isEmpty)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 2)
+                .transition(.opacity)
+            }
 
             if isSearchActive {
                 HStack(spacing: 8) {
@@ -474,6 +538,21 @@ private struct ContactsMainContent: View {
                                 if let index = vm.contacts.firstIndex(where: { $0.id == contact.id }) {
                                     NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
                                         HStack {
+                                            if isSelectionMode {
+                                                Button(action: {
+                                                    if selectedContacts.contains(contact.id) {
+                                                        selectedContacts.remove(contact.id)
+                                                    } else {
+                                                        selectedContacts.insert(contact.id)
+                                                    }
+                                                }) {
+                                                    Image(systemName: selectedContacts.contains(contact.id) ? "checkmark.circle.fill" : "circle")
+                                                        .foregroundColor(selectedContacts.contains(contact.id) ? .accentColor : .secondary)
+                                                        .font(.system(size: 28))
+                                                        .padding(.trailing, 8)
+                                                }
+                                                .buttonStyle(PlainButtonStyle())
+                                            }
                                             ContactCardView(
                                                 contact: $vm.contacts[index],
                                                 path: $path,
@@ -509,6 +588,7 @@ private struct ContactsMainContent: View {
                 .padding(.bottom, 40)
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: isSelectionMode)
         .animation(.easeInOut(duration: 0.25), value: isSearchActive)
     }
 }
@@ -584,5 +664,14 @@ private struct SearchContactsView: View {
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .animation(.easeInOut(duration: 0.33), value: searchText)
+    }
+}
+
+extension ContactsViewModel {
+    func deleteContacts(with ids: Set<UUID>) {
+        let toDelete = contacts.filter { ids.contains($0.id) }
+        for contact in toDelete {
+            removeContact(contact)
+        }
     }
 }

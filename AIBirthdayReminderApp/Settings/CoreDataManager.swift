@@ -20,7 +20,12 @@ class CoreDataManager {
 
     func saveContext() {
         if context.hasChanges {
-            try? context.save()
+            do {
+                try context.save()
+                print("Core Data: saveContext() — данные успешно сохранены.")
+            } catch {
+                print("Core Data ERROR в saveContext():", error)
+            }
         }
     }
 }
