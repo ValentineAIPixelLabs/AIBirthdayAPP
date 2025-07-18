@@ -2,8 +2,6 @@ import Contacts
 import SwiftUI
 import Foundation
 import UIKit
-//import AppHeaderStyle
-//import AppSearchBar
 
 extension View {
     func glassCircleStyle() -> some View {
@@ -38,6 +36,7 @@ extension Birthday {
 struct ContactCardView: View {
     @Binding var contact: Contact
     @Binding var path: NavigationPath
+    @Binding var contactForCongrats: Contact?
 
     var title: String { birthdayTitle(for: contact) }
     var details: String {
@@ -74,7 +73,7 @@ struct ContactCardView: View {
                 Spacer(minLength: 7)
 
                 Button(action: {
-                    path.append("congrats_\(contact.id.uuidString)")
+                    contactForCongrats = contact
                 }) {
                     Label("Поздравить", systemImage: "sparkles")
                         .font(AppButtonStyle.Congratulate.font)
@@ -106,11 +105,18 @@ struct ContactCardView: View {
     }
 }
 
-
-
-
-// --- Основной ContentView ---
 struct ContentView: View {
+    // Парсер для destination вида "congrats_<UUID>_<type>"
+    func parseCongratsDestination(_ destination: String) -> (UUID, String)? {
+        let prefix = "congrats_"
+        guard destination.hasPrefix(prefix) else { return nil }
+        let stripped = destination.dropFirst(prefix.count)
+        guard let underscoreIndex = stripped.firstIndex(of: "_") else { return nil }
+        let idString = String(stripped.prefix(upTo: underscoreIndex))
+        let type = String(stripped.suffix(from: stripped.index(after: underscoreIndex)))
+        guard let uuid = UUID(uuidString: idString) else { return nil }
+        return (uuid, type)
+    }
 
     @StateObject var vm = ContactsViewModel()
     @StateObject var chipFilter = ChipRelationFilter(relations: [])
@@ -124,132 +130,145 @@ struct ContentView: View {
         return !hasShown
     }()
     @State private var path = NavigationPath()
-    // Удаляем старое состояние поиска
     @State private var showSearchContacts: Bool = false
     @State private var searchText: String = ""
-
+    @State private var contactForCongrats: Contact?
 
     private var filteredContacts: [Contact] {
-        // Фильтрация только по chipFilter, поиск теперь в отдельном SearchContactsView
-        return chipFilter.filter(contacts: vm.sortedContacts)
+        chipFilter.filter(contacts: vm.sortedContacts)
     }
 
     private var sectionedContacts: [SectionedContacts] {
         BirthdaySectionsViewModel(contacts: filteredContacts).sectionedContacts()
     }
 
-var body: some View {
-    Group {
-        NavigationStack(path: $path) {
-            ZStack {
-                AppBackground()
-                ContactsMainContent(
-                    vm: vm,
-                    chipFilter: chipFilter,
-                    showAPIKeySheet: $showAPIKeySheet,
-                    contactToDelete: $contactToDelete,
-                    showDeleteAlert: $showDeleteAlert,
-                    highlightedContactID: $highlightedContactID,
-                    isContactPickerPresented: $isContactPickerPresented,
-                    showImportOptions: $showImportOptions,
-                    path: $path,
-                    filteredContacts: filteredContacts,
-                    sectionedContacts: sectionedContacts,
-                    handleImportedContact: handleImportedContact
-                )
-            }
-            .navigationBarHidden(true)
-            .navigationDestination(for: String.self) { destination in
-                if destination == "add" {
-                    AddContactView(vm: vm)
-                } else if destination.hasPrefix("congrats_") {
-                    // Извлекаем контакт по id из строки
-                    let idString = String(destination.dropFirst("congrats_".count))
-                    if let uuid = UUID(uuidString: idString),
-                       let idx = vm.contacts.firstIndex(where: { $0.id == uuid }) {
-                        ContactCongratsView(
-                            contact: $vm.contacts[idx],
-                            cardStore: CardHistoryStore(contactId: uuid),
-                            congratsHistoryStore: CongratsHistoryStore(contactId: uuid)
-                        )
-                    } else {
-                        Text("Контакт не найден")
+    var body: some View {
+        Group {
+            let contactsList: [Contact] = chipFilter.filter(contacts: vm.sortedContacts)
+            let contactsSections: [SectionedContacts] = BirthdaySectionsViewModel(contacts: contactsList).sectionedContacts()
+            NavigationStack(path: $path) {
+                ZStack {
+                    AppBackground()
+                    ContactsMainContent(
+                        vm: vm,
+                        chipFilter: chipFilter,
+                        showAPIKeySheet: $showAPIKeySheet,
+                        contactToDelete: $contactToDelete,
+                        showDeleteAlert: $showDeleteAlert,
+                        highlightedContactID: $highlightedContactID,
+                        isContactPickerPresented: $isContactPickerPresented,
+                        showImportOptions: $showImportOptions,
+                        path: $path,
+                        filteredContacts: contactsList,
+                        sectionedContacts: contactsSections,
+                        handleImportedContact: handleImportedContact,
+                        contactForCongrats: $contactForCongrats
+                    )
+                }
+                .navigationBarHidden(true)
+                .navigationDestination(for: String.self) { destination in
+                    switch destination {
+                    case "add":
+                        AddContactView(vm: vm)
+                    case _ where destination.hasPrefix("congrats_"):
+                        if let (uuid, type) = parseCongratsDestination(destination),
+                           let idx = vm.contacts.firstIndex(where: { $0.id == uuid }) {
+                            ContactCongratsView(
+                                contact: $vm.contacts[idx],
+                                cardStore: CardHistoryStore(contactId: uuid),
+                                congratsHistoryStore: CongratsHistoryStore(contactId: uuid),
+                                selectedMode: type
+                            )
+                        } else {
+                            Text("Контакт не найден")
+                        }
+                    default:
+                        Text("Неизвестный маршрут")
                     }
                 }
-            }
-            .sheet(isPresented: $showAPIKeySheet) {
-                APIKeyView()
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-            .alert("Удалить контакт?", isPresented: $showDeleteAlert, presenting: contactToDelete) { contact in
-                Button("Удалить", role: .destructive) {
-                    vm.removeContact(contact)
+                .sheet(isPresented: $showAPIKeySheet) {
+                    APIKeyView()
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                Button("Отмена", role: .cancel) { }
-            } message: { contact in
-                Text("Контакт \(contact.name) будет удалён безвозвратно.")
+                .alert("Удалить контакт?", isPresented: $showDeleteAlert, presenting: contactToDelete) { contact in
+                    Button("Удалить", role: .destructive) {
+                        vm.removeContact(contact)
+                    }
+                    Button("Отмена", role: .cancel) { }
+                } message: { contact in
+                    Text("Контакт \(contact.name) будет удалён безвозвратно.")
+                }
+                .confirmationDialog("Импортировать контакты?", isPresented: $showImportOptions, titleVisibility: .visible) {
+                    Button("Импортировать все контакты") {
+                        vm.importAllContacts()
+                        showImportOptions = false
+                        UserDefaults.standard.set(true, forKey: "hasShownImportOptions")
+                    }
+                    Button("Выбрать контакты") {
+                        isContactPickerPresented = true
+                    }
+                    Button("Отмена", role: .cancel) {
+                        showImportOptions = false
+                        UserDefaults.standard.set(true, forKey: "hasShownImportOptions")
+                    }
+                }
+                .sheet(isPresented: $isContactPickerPresented) {
+                    SystemContactPickerView { importedCNContact in
+                        handleImportedContact(importedCNContact)
+                    }
+                }
+                .sheet(isPresented: $showSearchContacts) {
+                    SearchContactsView(
+                        vm: vm,
+                        chipFilter: chipFilter,
+                        onDismiss: { showSearchContacts = false }
+                    )
+                }
+                .sheet(isPresented: $vm.isEditingContactPresented, onDismiss: {
+                    vm.editingContact = nil
+                }) {
+                    if let editingContact = vm.editingContact {
+                        EditContactView(vm: vm, contact: editingContact)
+                    }
+                }
+                .sheet(item: $contactForCongrats) { contact in
+                    CongratulationActionSheet(
+                        onGenerateText: {
+                            contactForCongrats = nil
+                            path.append("congrats_\(contact.id.uuidString)_text")
+                        },
+                        onGenerateCard: {
+                            contactForCongrats = nil
+                            path.append("congrats_\(contact.id.uuidString)_card")
+                        }
+                    )
+                }
             }
-            .confirmationDialog("Импортировать контакты?", isPresented: $showImportOptions, titleVisibility: .visible) {
-                Button("Импортировать все контакты") {
-                    vm.importAllContacts()
-                    showImportOptions = false
-                    UserDefaults.standard.set(true, forKey: "hasShownImportOptions")
+            .onAppear {
+                var allRelations = Set<String>()
+                var hasNoBirthday = false
+
+                for contact in vm.sortedContacts {
+                    if let relation = contact.relationType?.trimmingCharacters(in: .whitespacesAndNewlines), !relation.isEmpty {
+                        allRelations.insert(relation)
+                    }
+                    if contact.birthday == nil || !isValidBirthday(contact.birthday) {
+                        hasNoBirthday = true
+                    }
                 }
-                Button("Выбрать контакты") {
-                    isContactPickerPresented = true
+
+                var chipList = ["все контакты"]
+                chipList.append(contentsOf: allRelations.sorted())
+
+                if hasNoBirthday {
+                    chipList.append("без даты рождения")
                 }
-                Button("Отмена", role: .cancel) {
-                    showImportOptions = false
-                    UserDefaults.standard.set(true, forKey: "hasShownImportOptions")
-                }
-            }
-            .sheet(isPresented: $isContactPickerPresented) {
-                SystemContactPickerView { importedCNContact in
-                    handleImportedContact(importedCNContact)
-                }
-            }
-            // Новый .sheet для поиска
-            .sheet(isPresented: $showSearchContacts) {
-                SearchContactsView(
-                    vm: vm,
-                    chipFilter: chipFilter,
-                    onDismiss: { showSearchContacts = false }
-                )
-            }
-            // Новый .sheet для редактирования контакта
-            .sheet(isPresented: $vm.isEditingContactPresented, onDismiss: {
-                vm.editingContact = nil
-            }) {
-                if let editingContact = vm.editingContact {
-                    EditContactView(vm: vm, contact: editingContact)
-                }
+
+                chipFilter.allRelations = chipList
             }
         }
-        .onAppear {
-            var allRelations = Set<String>()
-            var hasNoBirthday = false
-
-            for contact in vm.sortedContacts {
-                if let relation = contact.relationType?.trimmingCharacters(in: .whitespacesAndNewlines), !relation.isEmpty {
-                    allRelations.insert(relation)
-                }
-                if contact.birthday == nil || !isValidBirthday(contact.birthday) {
-                    hasNoBirthday = true
-                }
-            }
-
-            var chipList = ["все контакты"]
-            chipList.append(contentsOf: allRelations.sorted())
-
-            if hasNoBirthday {
-                chipList.append("без даты рождения")
-            }
-
-            chipFilter.allRelations = chipList
-        }
+        .environmentObject(HolidaysViewModel())
     }
-    .environmentObject(HolidaysViewModel())
-}
 
     func handleImportedContact(_ importedCNContact: CNContact) {
         let importedContact = convertCNContactToContact(importedCNContact)
@@ -306,7 +325,6 @@ func convertCNContactToContact(_ cnContact: CNContact) -> Contact {
     )
 }
 
-
 // MARK: - ContactsMainContent
 private struct ContactsMainContent: View {
     @ObservedObject var vm: ContactsViewModel
@@ -321,12 +339,11 @@ private struct ContactsMainContent: View {
     let filteredContacts: [Contact]
     let sectionedContacts: [SectionedContacts]
     let handleImportedContact: (CNContact) -> Void
+    @Binding var contactForCongrats: Contact?
 
-    // Новый стиль поиска, как в HolidayDetailView
     @State private var isSearchActive: Bool = false
     @State private var searchText: String = ""
 
-    // Фильтрация контактов по поиску и чипам
     private var filteredContactsWithSearch: [Contact] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let base = vm.sortedContacts.filter {
@@ -343,7 +360,6 @@ private struct ContactsMainContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Верхняя панель с кнопками
             HStack(alignment: .center) {
                 Text("Контакты")
                     .font(.title2).bold()
@@ -358,7 +374,6 @@ private struct ContactsMainContent: View {
                             .foregroundColor(AppButtonStyle.Circular.iconColor)
                             .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
                     }
-                    // Кнопка поиска (лупа) с новым стилем
                     Button(action: {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             isSearchActive.toggle()
@@ -387,7 +402,6 @@ private struct ContactsMainContent: View {
             .padding(.top, AppHeaderStyle.topPadding)
             .padding(.horizontal, 20)
 
-            // Строка поиска с плавной анимацией, как в HolidayDetailView
             if isSearchActive {
                 HStack(spacing: 8) {
                     AppSearchBar(text: $searchText)
@@ -409,7 +423,6 @@ private struct ContactsMainContent: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            // Чипы фильтра под строкой поиска, с паддингом .horizontal 16, сверху около 12
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(chipFilter.allRelations, id: \.self) { relation in
@@ -445,7 +458,6 @@ private struct ContactsMainContent: View {
             }
             .padding(.top, 12)
 
-            // Список контактов под фильтрами
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
                     ForEach(
@@ -462,7 +474,11 @@ private struct ContactsMainContent: View {
                                 if let index = vm.contacts.firstIndex(where: { $0.id == contact.id }) {
                                     NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
                                         HStack {
-                                            ContactCardView(contact: $vm.contacts[index], path: $path)
+                                            ContactCardView(
+                                                contact: $vm.contacts[index],
+                                                path: $path,
+                                                contactForCongrats: $contactForCongrats
+                                            )
                                         }
                                         .padding(.horizontal, 20)
                                         .frame(maxWidth: .infinity, alignment: .center)
@@ -497,14 +513,12 @@ private struct ContactsMainContent: View {
     }
 }
 
-// MARK: - SearchContactsView
 private struct SearchContactsView: View {
     @ObservedObject var vm: ContactsViewModel
     @ObservedObject var chipFilter: ChipRelationFilter
     var onDismiss: () -> Void
     @State private var searchText: String = ""
 
-    // Фильтрация по тексту и чипам
     private var filteredContacts: [Contact] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let base = vm.sortedContacts.filter {
@@ -548,7 +562,11 @@ private struct SearchContactsView: View {
                                 ForEach(section.contacts) { contact in
                                     if let index = vm.contacts.firstIndex(where: { $0.id == contact.id }) {
                                         NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
-                                            ContactCardView(contact: $vm.contacts[index], path: .constant(NavigationPath()))
+                                            ContactCardView(
+                                                contact: $vm.contacts[index],
+                                                path: .constant(NavigationPath()),
+                                                contactForCongrats: .constant(nil)
+                                            )
                                         }
                                     }
                                 }
