@@ -1,5 +1,6 @@
 import Foundation
 import CoreData
+import UIKit
 
 class ContactsViewModel: ObservableObject {
     enum AppColorScheme: String, CaseIterable, Identifiable, Codable {
@@ -181,8 +182,10 @@ class ContactsViewModel: ObservableObject {
                     leisure: entity.leisure,
                     additionalInfo: entity.additionalInfo,
                     phoneNumber: entity.phoneNumber,
-                    congratsHistory: [],
-                    cardHistory: []
+                    congratsHistory: CongratsHistoryManager.getCongrats(for: entity.id ?? UUID()),
+                    cardHistory: CardHistoryManager.getCards(for: entity.id ?? UUID()).map {
+                        CardHistoryItem(id: $0.id, date: $0.date, cardID: $0.cardID)
+                    }
                 )
             }
             print("Загружено контактов из CoreData: \(contacts.count)")

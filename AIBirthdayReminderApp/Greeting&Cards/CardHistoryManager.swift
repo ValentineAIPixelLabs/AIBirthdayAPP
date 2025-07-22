@@ -28,7 +28,13 @@ final class CardHistoryManager {
         entity.date = item.date
         entity.cardID = item.cardID
         entity.imageData = image.pngData()
+        if let data = entity.imageData {
+            print("🧠 Сохранено imageData, размер: \(data.count) байт")
+        } else {
+            print("⚠️ imageData получилось nil")
+        }
         entity.contact = contact
+        print("🧩 Привязана к контакту: \(contact.id?.uuidString ?? "nil")")
 
         do {
             try context.save()
@@ -48,7 +54,7 @@ final class CardHistoryManager {
             print("❌ Не удалось загрузить открытки")
             return []
         }
-
+        print("📦 Найдено открыток в Core Data: \(results.count) для контакта \(contactId)")
         return results.map {
             CardHistoryItemWithImage(
                 id: $0.id ?? UUID(),
@@ -58,6 +64,21 @@ final class CardHistoryManager {
             )
         }
     }
+    static func logTotalCardImagesSize(for contactId: UUID) {
+        let context = CoreDataManager.shared.context
+        let request: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "contact.id == %@", contactId as CVarArg)
+
+        guard let results = try? context.fetch(request) else {
+            print("❌ Не удалось загрузить открытки для подсчёта веса")
+            return
+        }
+
+        let totalBytes = results.compactMap { $0.imageData?.count }.reduce(0, +)
+        let totalMB = Double(totalBytes) / 1024 / 1024
+        print("🧮 Общий размер всех открыток для контакта \(contactId): \(totalBytes) байт (\(String(format: "%.2f", totalMB)) MB)")
+    }
+
 
     /// Удалить открытку по id
     static func deleteCard(_ id: UUID) {

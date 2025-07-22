@@ -38,5 +38,6 @@ struct AppTabView: View {
             vm.colorScheme == .system ? nil :
             (vm.colorScheme == .light ? .light : .dark)
         )
+        .environmentObject(vm)
     }
 }

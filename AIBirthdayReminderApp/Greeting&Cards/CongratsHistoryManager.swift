@@ -2,11 +2,7 @@
 import Foundation
 import CoreData
 
-struct CongratsHistoryItem {
-    let id: UUID
-    let date: Date
-    let message: String
-}
+
 
 final class CongratsHistoryManager {
     private static var context: NSManagedObjectContext {

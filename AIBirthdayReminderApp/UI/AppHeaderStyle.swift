@@ -8,18 +8,24 @@
 import Foundation
 import SwiftUI
 
-/// Централизованные стили и размеры для верхней «шапки» (header) на экранах приложения.
+/// Стилизация top bar (верхней панели) на экранах приложения.
 struct AppHeaderStyle {
-    /// Минимальная высота header
-    static let minHeight: CGFloat = 84
-    /// Максимальная высота header (например, для анимаций)
-    static let maxHeight: CGFloat = 144
     /// Отступ сверху (от safeArea)
     static let topPadding: CGFloat = 5
-    /// Внутренний вертикальный паддинг между аватаркой/заголовком и границей шапки
-    static let verticalPadding: CGFloat = 16
-    /// Радиус скругления для header (если нужен эффект карточки)
-    static let cornerRadius: CGFloat = 28
     /// Расстояние между action-кнопками в верхней шапке на всех экранах.
     static let buttonSpacing: CGFloat = 12
+    /// Основная (рекомендуемая) высота top bar во всех экранах
+    static let headerHeight: CGFloat = 60
+    /// Горизонтальный паддинг top bar
+    static let horizontalPadding: CGFloat = 20
+    /// Фон top bar и под фильтрами/чипами идентичен TabBar
+    static let backgroundMaterial: Material = .ultraThinMaterial
+    /// Вертикальный отступ между TopBar и фильтрами/чипами на всех экранах
+    static let filterChipsTopPadding: CGFloat = 12
+    /// Вертикальный отступ снизу под фильтрами/чипами на всех экранах
+    static let filterChipsBottomPadding: CGFloat = 12
+    /// Вертикальный паддинг между областью с фильтрами/чипсами и началом списка карточек (унифицированный для всех экранов)
+    static let listTopPaddingAfterChips: CGFloat = 16
+    /// Вертикальный паддинг между областью фильтров/чипсов и текстом месяца над списком карточек
+    static let monthLabelTopPadding: CGFloat = 10
 }
