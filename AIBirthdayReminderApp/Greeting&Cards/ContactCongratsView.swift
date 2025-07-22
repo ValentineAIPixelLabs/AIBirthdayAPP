@@ -33,8 +33,7 @@ struct ScrollOffsetPreferenceKey: PreferenceKey {
 struct ContactCongratsView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var contact: Contact
-    @StateObject private var cardStore: CardHistoryStore
-    @StateObject private var congratsHistoryStore: CongratsHistoryStore
+    @State private var cardHistory: [CardHistoryItemWithImage] = []
     @State private var congratsHistory: [CongratsHistoryItem] = []
     @State private var selectedStyle: CongratsStyle = .classic
     @State private var isLoading: Bool = false
@@ -51,10 +50,8 @@ struct ContactCongratsView: View {
     @State private var cardPopupUrl: URL?
     @State private var showCardShareSheet = false
 
-    init(contact: Binding<Contact>, cardStore: CardHistoryStore, congratsHistoryStore: CongratsHistoryStore, selectedMode: String) {
+    init(contact: Binding<Contact>, selectedMode: String) {
         self._contact = contact
-        _cardStore = StateObject(wrappedValue: cardStore)
-        _congratsHistoryStore = StateObject(wrappedValue: congratsHistoryStore)
         self.selectedMode = selectedMode
         _selectedMode = State(initialValue: selectedMode)
     }
@@ -75,49 +72,7 @@ struct ContactCongratsView: View {
                             topButtons(geo: geo)
                                 .transition(.move(edge: .top).combined(with: .opacity))
                         }
-                        VStack(spacing: 20) {
-                            // Header
-                            VStack(spacing: 8) {
-                                contactBlock(contact: contact)
-                                
-                            }
-                            .frame(maxWidth: 500)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 15)
-
-                        
-                            generateButtons()
-
-                            // History Sections
-                            VStack(spacing: 24) {
-                                if selectedMode == "text" {
-                                    ContactCongratsHistorySection(
-                                        congratsHistory: congratsHistory,
-                                        onDelete: { item in
-                                            if let idx = congratsHistory.firstIndex(where: { $0.id == item.id }) {
-                                                congratsHistory.remove(at: idx)
-                                                congratsHistoryStore.saveHistory(congratsHistory)
-                                            }
-                                        },
-                                        onShowPopup: { message in
-                                                congratsPopupMessage = message
-                                                showCongratsPopup = true
-                                            }
-                                    )
-                                    // Здесь появятся настройки генерации поздравления и popup результата
-                                }
-                                if selectedMode == "card" {
-                                    CardHistorySection(cardStore: cardStore, onShowPopup: { url, image in
-                                        cardPopupUrl = url
-                                        cardPopupImage = image
-                                        showCardPopup = true
-                                    })
-                                    // Здесь появятся настройки генерации открытки и popup результата
-                                }
-                            }
-                            .padding(.horizontal)
-                            .padding(.bottom, 32)
-                        }
+                        mainContent()
                     }
                 }
             }
@@ -129,7 +84,9 @@ struct ContactCongratsView: View {
             }
         }
         .onAppear {
-            congratsHistory = congratsHistoryStore.loadHistory()
+            cardHistory = CardHistoryManager.getCards(for: contact.id)
+            congratsHistory = CongratsHistoryManager.getCongrats(for: contact.id)
+            CardHistoryManager.logTotalCardImagesSize(for: contact.id)
         }
         .overlay(
             Group {
@@ -224,6 +181,74 @@ struct ContactCongratsView: View {
         .toolbar(.hidden, for: .tabBar)
     }
 
+    // MARK: - Main Content Extraction
+    @ViewBuilder
+    private func mainContent() -> some View {
+        VStack(spacing: 20) {
+            // Header
+            VStack(spacing: 8) {
+                contactBlock(contact: contact)
+            }
+            .frame(maxWidth: 500)
+            .padding(.horizontal, 16)
+            .padding(.top, 15)
+
+            // --- Новый UI только для режима "card" ---
+            if selectedMode == "card" {
+                CardGenerationSection(
+                    referenceImage: $referenceImage,
+                    showImagePicker: $showImagePicker,
+                    prompt: $prompt,
+                    promptCharLimit: promptCharLimit,
+                    selectedCardStyle: $selectedCardStyle,
+                    selectedAspectRatio: $selectedAspectRatio,
+                    selectedQuality: $selectedQuality,
+                    onGeneratePrompt: generateCreativePrompt,
+                    onRemoveReferenceImage: {
+                        referenceImage = nil
+                    }
+                )
+            }
+
+            generateButtons()
+
+            // History Sections
+            historySection()
+        }
+    }
+
+    // MARK: - History Section Extraction
+    @ViewBuilder
+    private func historySection() -> some View {
+        VStack(spacing: 24) {
+            if selectedMode == "text" {
+                ContactCongratsHistorySection(
+                    congratsHistory: congratsHistory,
+                    onDelete: { item in
+                        if let idx = congratsHistory.firstIndex(where: { $0.id == item.id }) {
+                            congratsHistory.remove(at: idx)
+                            CongratsHistoryManager.deleteCongrats(item.id)
+                            congratsHistory = CongratsHistoryManager.getCongrats(for: contact.id)
+                        }
+                    },
+                    onShowPopup: { message in
+                        congratsPopupMessage = message
+                        showCongratsPopup = true
+                    }
+                )
+                // Здесь появятся настройки генерации поздравления и popup результата
+            }
+            if selectedMode == "card" {
+                CardHistorySection(cardHistory: $cardHistory, contactId: contact.id, onShowPopup: { image in
+                    cardPopupImage = image
+                    showCardPopup = true
+                })
+            }
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 32)
+    }
+
     // MARK: - Top Buttons
     private func topButtons(geo: GeometryProxy) -> some View {
         HStack {
@@ -256,7 +281,9 @@ struct ContactCongratsView: View {
                             case .success(let text):
                                 let newCongrats = CongratsHistoryItem(date: Date(), message: text)
                                 congratsHistory.append(newCongrats)
-                                congratsHistoryStore.saveHistory(congratsHistory)
+                                if let last = congratsHistory.last {
+                                    CongratsHistoryManager.addCongrats(item: last, for: contact.id)
+                                }
                                 congratsPopupMessage = text
                                 showCongratsPopup = true
                             case .failure(let error):
@@ -320,7 +347,17 @@ struct ContactCongratsView: View {
         .padding(.horizontal)
     }
         // это из кода cardfullscreenview
+    // MARK: - Card Generation State & Handlers
+    @State private var referenceImage: UIImage? = nil
+    @State private var showImagePicker: Bool = false
+    @State private var prompt: String = ""
+    private let promptCharLimit: Int = 4000
+    @State private var selectedCardStyle: CardVisualStyle = .classic
+    @State private var selectedAspectRatio: CardAspectRatio = .square
+    @State private var selectedQuality: CardQuality = .medium
+
     private func handleGenerate() {
+        // Заглушка: логика передачи referenceImage, prompt, selectedCardStyle, selectedAspectRatio, selectedQuality
         alertMessage = nil
         guard !isLoading else { return }
         let apiKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
@@ -328,20 +365,24 @@ struct ContactCongratsView: View {
             alertMessage = "Нет данных контакта или API-ключа."
             return
         }
-
+        // Здесь можно использовать referenceImage, prompt, selectedCardStyle, selectedAspectRatio, selectedQuality
         isLoading = true
-        ChatGPTService.shared.generateCard(for: contact, apiKey: apiKey) { result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(_):
-                    // После успешной генерации — только обновляем список
-                    cardStore.loadSavedCards()
-                case .failure(let error):
-                    self.alertMessage = "Ошибка генерации открытки: \(error.localizedDescription)"
-                }
-                self.isLoading = false
+        // Заглушка: можно передать параметры в сервис генерации открыток
+        ChatGPTService.shared.generateCard(for: contact, apiKey: apiKey) {
+            print("📥 Открытка успешно сохранена, загружаем историю")
+            cardHistory = CardHistoryManager.getCards(for: contact.id)
+            print("📊 История открыток после генерации: \(cardHistory.count) шт.")
+            if let latest = cardHistory.first, let image = latest.image {
+                cardPopupImage = image
+                showCardPopup = true
             }
+            isLoading = false
         }
+    }
+
+    private func generateCreativePrompt() {
+        // Заглушка: автогенерация промта по фактам контакта (можно связать с ChatGPTService)
+        prompt = "Поздравительный промт на основе информации о \(contact.name)..."
     }
 
 
@@ -478,10 +519,14 @@ private func contactBlock(contact: Contact) -> some View {
 
 // MARK: - CardHistorySection (Horizontal Scroll Cards)
 struct CardHistorySection: View {
-    @ObservedObject var cardStore: CardHistoryStore
-    let onShowPopup: (URL, UIImage) -> Void
+    @Binding var cardHistory: [CardHistoryItemWithImage]
+    let contactId: UUID
+    let onShowPopup: (UIImage) -> Void
     @State private var showCopyAnimation: [Int: Bool] = [:]
 
+    private var placeholderImage: UIImage {
+        UIImage(systemName: "photo") ?? UIImage()
+    }
     var body: some View {
         Section {
             CardPresetView {
@@ -489,7 +534,7 @@ struct CardHistorySection: View {
                     Text("Открытки")
                         .font(.headline)
                         .padding(.bottom, 4)
-                    if cardStore.savedCards.isEmpty {
+                    if cardHistory.isEmpty {
                         Text("Нет открыток")
                             .foregroundColor(.secondary)
                             .padding()
@@ -499,10 +544,13 @@ struct CardHistorySection: View {
                     } else {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 16) {
-                                ForEach(Array(cardStore.savedCards.enumerated()), id: \.offset) { idx, url in
+                                ForEach(Array(cardHistory.enumerated()), id: \.offset) { idx, item in
                                     CardImageItem(
-                                        url: url,
-                                        onDelete: { cardStore.deleteCard(at: idx) },
+                                        image: item.image ?? placeholderImage,
+                                        onDelete: {
+                                            CardHistoryManager.deleteCard(item.id)
+                                            cardHistory = CardHistoryManager.getCards(for: contactId)
+                                        },
                                         onCopy: {
                                             withAnimation(.spring()) {
                                                 showCopyAnimation[idx] = true
@@ -514,7 +562,7 @@ struct CardHistorySection: View {
                                             }
                                         },
                                         showCopyAnimation: showCopyAnimation[idx] ?? false,
-                                        onShowPopup: { image in onShowPopup(url, image) }
+                                        onShowPopup: { image in onShowPopup(image) }
                                     )
                                     .frame(width: 180)
                                 }
@@ -530,55 +578,36 @@ struct CardHistorySection: View {
 }
 
 struct CardImageItem: View {
-    let url: URL
+    let image: UIImage
     let onDelete: () -> Void
     let onCopy: () -> Void
     let showCopyAnimation: Bool
     let onShowPopup: (UIImage) -> Void
     @State private var isShareSheetPresented = false
+    @State private var showCopyAnimationState = false
 
-    private func getCreationDate() -> Date? {
-        let resourceValues = try? url.resourceValues(forKeys: [.creationDateKey])
-        return resourceValues?.creationDate
-    }
+    // For demonstration, you could add a date property if needed
+    // let date: Date?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             VStack(spacing: 8) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView()
-                            .frame(height: 120)
-                            .frame(maxWidth: .infinity)
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 160, height: 110)
-                            .clipped()
-                            .cornerRadius(14)
-                            .shadow(radius: 3)
-                            .onTapGesture {
-                                if let data = try? Data(contentsOf: url), let uiImage = UIImage(data: data) {
-                                    onShowPopup(uiImage)
-                                }
-                            }
-                    case .failure(_):
-                        Image(systemName: "photo")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(height: 100)
-                            .foregroundColor(.accentColor)
-                    @unknown default:
-                        EmptyView()
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 160, height: 110)
+                    .clipped()
+                    .cornerRadius(14)
+                    .shadow(radius: 3)
+                    .onTapGesture {
+                        onShowPopup(image)
                     }
-                }
-                if let date = getCreationDate() {
-                    Text(date, style: .date)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
+                // If you want to display a date, add here (e.g., if you pass it in)
+                // if let date = date {
+                //     Text(date, style: .date)
+                //         .font(.caption2)
+                //         .foregroundColor(.secondary)
+                // }
             }
             .padding(8)
             .background(
@@ -592,11 +621,8 @@ struct CardImageItem: View {
             )
             .contextMenu {
                 Button {
-                    if let data = try? Data(contentsOf: url),
-                       let uiImage = UIImage(data: data) {
-                        UIPasteboard.general.image = uiImage
-                        onCopy()
-                    }
+                    UIPasteboard.general.image = image
+                    onCopy()
                 } label: {
                     Label("Копировать", systemImage: "doc.on.doc")
                 }
@@ -612,7 +638,7 @@ struct CardImageItem: View {
                 }
             }
             .sheet(isPresented: $isShareSheetPresented) {
-                ActivityViewController(activityItems: [url])
+                ActivityViewController(activityItems: [image])
             }
             if showCopyAnimation {
                 Image(systemName: "doc.on.doc.fill")
@@ -624,7 +650,6 @@ struct CardImageItem: View {
             }
         }
     }
-    
 }
 struct CongratsResultPopup: View {
     let message: String
@@ -794,3 +819,184 @@ struct ZoomableImage: UIViewRepresentable {
         }
     }
 }
+
+// MARK: - Card Generation UI Section
+private struct CardGenerationSection: View {
+    @Binding var referenceImage: UIImage?
+    @Binding var showImagePicker: Bool
+    @Binding var prompt: String
+    let promptCharLimit: Int
+    @Binding var selectedCardStyle: CardVisualStyle
+    @Binding var selectedAspectRatio: CardAspectRatio
+    @Binding var selectedQuality: CardQuality
+    var onGeneratePrompt: () -> Void
+    var onRemoveReferenceImage: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // Reference Image Section
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Reference-изображение (необязательно)")
+                    .font(.subheadline.weight(.medium))
+                HStack(spacing: 12) {
+                    if let image = referenceImage {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 74, height: 74)
+                            .clipped()
+                            .cornerRadius(12)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.18), lineWidth: 1))
+                        Button(action: onRemoveReferenceImage) {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                                .padding(8)
+                                .background(Color(.systemGray6))
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Button(action: { showImagePicker = true }) {
+                            VStack(spacing: 4) {
+                                Image(systemName: "photo.badge.plus")
+                                    .font(.system(size: 26, weight: .regular))
+                                    .foregroundColor(.accentColor)
+                                Text("Загрузить")
+                                    .font(.caption)
+                                    .foregroundColor(.accentColor)
+                            }
+                            .frame(width: 74, height: 74)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            // Prompt TextEditor
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Промт для открытки")
+                    .font(.subheadline.weight(.medium))
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $prompt)
+                        .frame(minHeight: 72, maxHeight: 120)
+                        .padding(6)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.gray.opacity(0.14), lineWidth: 1))
+                    if prompt.isEmpty {
+                        Text("Введите промт (до \(promptCharLimit) символов)...")
+                            .foregroundColor(.secondary)
+                            .padding(.top, 12)
+                            .padding(.leading, 16)
+                            .font(.callout)
+                    }
+                }
+                HStack {
+                    Spacer()
+                    Text("\(prompt.count)/\(promptCharLimit)")
+                        .font(.caption2)
+                        .foregroundColor(prompt.count > promptCharLimit ? .red : .secondary)
+                }
+            }
+
+            // Generate Prompt Button
+            Button(action: onGeneratePrompt) {
+                HStack {
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Сгенерировать промт")
+                        .font(.callout.weight(.bold))
+                }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 9)
+                        .fill(Color.accentColor.opacity(0.13))
+                )
+            }
+            .buttonStyle(.plain)
+
+            // Card Style Picker
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Стиль открытки")
+                    .font(.subheadline.weight(.medium))
+                Picker("Стиль", selection: $selectedCardStyle) {
+                    ForEach(CardVisualStyle.allCases) { style in
+                        Text(style.rawValue).tag(style)
+                    }
+                }
+                .pickerStyle(MenuPickerStyle())
+            }
+
+            // Aspect Ratio Picker
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Соотношение сторон")
+                    .font(.subheadline.weight(.medium))
+                Picker("Формат", selection: $selectedAspectRatio) {
+                    ForEach(CardAspectRatio.allCases) { ratio in
+                        Text(ratio.displayName).tag(ratio)
+                    }
+                }
+                .pickerStyle(SegmentedPickerStyle())
+            }
+
+            // Quality Picker
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Качество")
+                    .font(.subheadline.weight(.medium))
+                Picker("Качество", selection: $selectedQuality) {
+                    ForEach(CardQuality.allCases) { q in
+                        Text(q.displayName).tag(q)
+                    }
+                }
+                .pickerStyle(SegmentedPickerStyle())
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 2)
+        .sheet(isPresented: $showImagePicker) {
+            ImagePicker { image in
+                referenceImage = image
+            }
+        }
+    }
+}
+
+// MARK: - Card Generation Option Enums
+enum CardVisualStyle: String, CaseIterable, Identifiable {
+    case classic = "Классика"
+    case funny = "Смешной"
+    case minimal = "Минимализм"
+    case retro = "Ретро"
+    case watercolor = "Акварель"
+    var id: String { rawValue }
+}
+
+enum CardAspectRatio: String, CaseIterable, Identifiable {
+    case square = "1:1"
+    case threeFour = "3:4"
+    case sixteenNine = "16:9"
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .square: return "1:1"
+        case .threeFour: return "3:4"
+        case .sixteenNine: return "16:9"
+        }
+    }
+}
+
+enum CardQuality: String, CaseIterable, Identifiable {
+    case medium = "Среднее"
+    case high = "Высокое"
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .medium: return "Среднее"
+        case .high: return "Высокое"
+        }
+    }
+}
+

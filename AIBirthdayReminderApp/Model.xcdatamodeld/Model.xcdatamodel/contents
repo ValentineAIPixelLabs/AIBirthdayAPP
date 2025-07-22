@@ -1,6 +1,19 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23788.4" systemVersion="24F74" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithSwiftData="YES" userDefinedModelVersionIdentifier="">
-    <entity name="ContactEntity" representedClassName="ContactEntity" syncable="YES" codeGenerationType="class">
+    <entity name="CardHistoryEntity" representedClassName=".CardHistoryEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="cardID" attributeType="String"/>
+        <attribute name="date" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="imageData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
+        <relationship name="contact" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="ContactEntity" inverseName="cardHistory" inverseEntity="ContactEntity"/>
+    </entity>
+    <entity name="CongratsHistoryEntity" representedClassName=".CongratsHistoryEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="date" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="message" attributeType="String"/>
+        <relationship name="contact" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="ContactEntity" inverseName="congratsHistory" inverseEntity="ContactEntity"/>
+    </entity>
+    <entity name="ContactEntity" representedClassName=".ContactEntity" syncable="YES" codeGenerationType="class">
         <attribute name="additionalInfo" optional="YES" attributeType="String"/>
         <attribute name="birthdayDay" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
         <attribute name="birthdayMonth" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
@@ -21,5 +34,7 @@
         <attribute name="phoneNumber" optional="YES" attributeType="String"/>
         <attribute name="relationType" optional="YES" attributeType="String"/>
         <attribute name="surname" optional="YES" attributeType="String"/>
+        <relationship name="cardHistory" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="CardHistoryEntity" inverseName="contact" inverseEntity="CardHistoryEntity"/>
+        <relationship name="congratsHistory" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="CongratsHistoryEntity" inverseName="contact" inverseEntity="CongratsHistoryEntity"/>
     </entity>
 </model>

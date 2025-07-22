@@ -62,6 +62,8 @@ struct AppButtonStyle {
     }
     // Стили для фильтр-кнопок (капсул) в списках и фильтрах
     struct FilterChip {
+        /// Фон под фильтрами/капсулами (например, .ultraThinMaterial)
+        // static let backgroundMaterial: Material = .ultraThinMaterial
         static let selectedBackground = Color.accentColor
         static let unselectedBackground = Color(.systemGray6)
         static let selectedText = Color.white
@@ -69,6 +71,8 @@ struct AppButtonStyle {
         static let font = Font.subheadline
         static let horizontalPadding: CGFloat = 16
         static let verticalPadding: CGFloat = 8
+        /// Горизонтальный отступ между капсулами в HStack
+        static let spacing: CGFloat = 10
         static let cornerRadius: CGFloat = 22
         static let selectedShadow = Color.accentColor.opacity(0.18)
         static let unselectedShadow = Color.clear

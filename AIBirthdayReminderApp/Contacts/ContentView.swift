@@ -175,8 +175,6 @@ struct ContentView: View {
                            let idx = vm.contacts.firstIndex(where: { $0.id == uuid }) {
                             ContactCongratsView(
                                 contact: $vm.contacts[idx],
-                                cardStore: CardHistoryStore(contactId: uuid),
-                                congratsHistoryStore: CongratsHistoryStore(contactId: uuid),
                                 selectedMode: type
                             )
                         } else {
@@ -366,82 +364,83 @@ private struct ContactsMainContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center) {
-                Text("Контакты")
-                    .font(.title2).bold()
-                    .foregroundColor(.primary)
-                Spacer()
-                HStack(spacing: AppHeaderStyle.buttonSpacing) {
-                    // Новая кнопка выбора/отмены с бейджем
-                    Button(action: {
-                        if isSelectionMode {
-                            isSelectionMode = false
-                            selectedContacts.removeAll()
-                        } else {
-                            isSelectionMode = true
-                        }
-                    }) {
-                        Image(systemName: isSelectionMode ? "xmark" : "checkmark.circle")
-                            .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-                            .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                            .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                            .foregroundColor(isSelectionMode ? .red : AppButtonStyle.Circular.iconColor)
-                            .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                            .contentShape(Circle())
-                            .accessibilityLabel(isSelectionMode ? "Отмена" : "Выбрать")
-                    }
-                    .overlay(
-                        Group {
-                            if !isSelectionMode {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color.red)
-                                        .frame(width: 20, height: 20)
-                                    Text("\(filteredContactsWithSearch.count)")
-                                        .foregroundColor(.white)
-                                        .font(.system(size: 12, weight: .bold))
-                                }
-                                .offset(x: 15, y: -15)
+            AppTopBar(
+                title: "",
+                leftButtons: [],
+                rightButtons: [
+                    AnyView(
+                        Button(action: {
+                            if isSelectionMode {
+                                isSelectionMode = false
+                                selectedContacts.removeAll()
+                            } else {
+                                isSelectionMode = true
                             }
-                        },
-                        alignment: .topTrailing
-                    )
-                    // Остальные кнопки
-                    Button(action: { showAPIKeySheet = true }) {
-                        Image(systemName: "key")
-                            .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                            .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                            .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                            .foregroundColor(AppButtonStyle.Circular.iconColor)
-                            .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-                    }
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            isSearchActive.toggle()
+                        }) {
+                            Image(systemName: isSelectionMode ? "xmark" : "checkmark.circle")
+                                .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
+                                .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
+                                .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
+                                .foregroundColor(isSelectionMode ? .red : AppButtonStyle.Circular.iconColor)
+                                .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
+                                .contentShape(Circle())
+                                .accessibilityLabel(isSelectionMode ? "Отмена" : "Выбрать")
                         }
-                    }) {
-                        Image(systemName: "magnifyingglass")
-                            .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                            .background(
-                                Circle().fill(isSearchActive ? AppButtonStyle.Circular.backgroundColor : AppButtonStyle.Circular.backgroundColor)
-                            )
-                            .shadow(color: isSearchActive ? AppButtonStyle.Circular.shadow : AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                            .foregroundColor(isSearchActive ? AppButtonStyle.Circular.iconColor : AppButtonStyle.Circular.iconColor)
-                            .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-                    }
-                    Button(action: { path.append("add") }) {
-                        Image(systemName: "plus")
-                            .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                            .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                            .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                            .foregroundColor(AppButtonStyle.Circular.iconColor)
-                            .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-                    }
-                }
-            }
-            .frame(height: AppHeaderStyle.minHeight)
-            .padding(.top, AppHeaderStyle.topPadding)
-            .padding(.horizontal, 20)
+                        .overlay(
+                            Group {
+                                if !isSelectionMode {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.red)
+                                            .frame(width: 20, height: 20)
+                                        Text("\(filteredContactsWithSearch.count)")
+                                            .foregroundColor(.white)
+                                            .font(.system(size: 12, weight: .bold))
+                                    }
+                                    .offset(x: 15, y: -15)
+                                }
+                            },
+                            alignment: .topTrailing
+                        )
+                    ),
+                    AnyView(
+                        Button(action: { showAPIKeySheet = true }) {
+                            Image(systemName: "key")
+                                .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
+                                .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
+                                .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
+                                .foregroundColor(AppButtonStyle.Circular.iconColor)
+                                .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
+                        }
+                    ),
+                    AnyView(
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                isSearchActive.toggle()
+                            }
+                        }) {
+                            Image(systemName: "magnifyingglass")
+                                .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
+                                .background(
+                                    Circle().fill(isSearchActive ? AppButtonStyle.Circular.backgroundColor : AppButtonStyle.Circular.backgroundColor)
+                                )
+                                .shadow(color: isSearchActive ? AppButtonStyle.Circular.shadow : AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
+                                .foregroundColor(isSearchActive ? AppButtonStyle.Circular.iconColor : AppButtonStyle.Circular.iconColor)
+                                .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
+                        }
+                    ),
+                    AnyView(
+                        Button(action: { path.append("add") }) {
+                            Image(systemName: "plus")
+                                .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
+                                .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
+                                .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
+                                .foregroundColor(AppButtonStyle.Circular.iconColor)
+                                .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
+                        }
+                    )
+                ]
+            )
 
             if isSelectionMode {
                 HStack(spacing: 20) {
@@ -488,7 +487,7 @@ private struct ContactsMainContent: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: AppButtonStyle.FilterChip.spacing) {
                     ForEach(chipFilter.allRelations, id: \.self) { relation in
                         Button(action: { chipFilter.toggle(relation) }) {
                             Text(relation.capitalizedFirstLetter())
@@ -517,10 +516,10 @@ private struct ContactsMainContent: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 3)
-                .padding(.top, 0)
+                .padding(.bottom, AppHeaderStyle.filterChipsBottomPadding)
+                .padding(.top, AppHeaderStyle.filterChipsTopPadding)
             }
-            .padding(.top, 12)
+            //.background(AppButtonStyle.FilterChip.backgroundMaterial)
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
@@ -533,7 +532,7 @@ private struct ContactsMainContent: View {
                                 .font(.callout).bold()
                                 .foregroundColor(.secondary)
                                 .padding(.horizontal, 20)
-                                .padding(.top, 10)
+                                .padding(.top, AppHeaderStyle.monthLabelTopPadding)
                             ForEach(section.contacts) { contact in
                                 if let index = vm.contacts.firstIndex(where: { $0.id == contact.id }) {
                                     NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
@@ -561,30 +560,14 @@ private struct ContactsMainContent: View {
                                         }
                                         .padding(.horizontal, 20)
                                         .frame(maxWidth: .infinity, alignment: .center)
-                                        .scaleEffect(highlightedContactID == contact.id ? 0.95 : 1.0)
-                                        .animation(.spring(response: 0.2, dampingFraction: 0.6), value: highlightedContactID)
-                                        .contextMenu {
-                                            Button("Редактировать") {
-                                                if vm.contacts.contains(where: { $0.id == contact.id }) {
-                                                    DispatchQueue.main.async {
-                                                        vm.editingContact = contact
-                                                        vm.isEditingContactPresented = true
-                                                    }
-                                                }
-                                            }
-                                            Button(role: .destructive) {
-                                                vm.removeContact(contact)
-                                            } label: {
-                                                Text("Удалить")
-                                            }
-                                        }
                                     }
+                                    .buttonStyle(PlainButtonStyle())
                                 }
                             }
                         }
                     }
                 }
-                .padding(.top, 10)
+                .padding(.top, AppHeaderStyle.listTopPaddingAfterChips)
                 .padding(.bottom, 40)
             }
         }
@@ -638,7 +621,7 @@ private struct SearchContactsView: View {
                                     .font(.callout).bold()
                                     .foregroundColor(.secondary)
                                     .padding(.horizontal, 20)
-                                    .padding(.top, 10)
+                                    .padding(.top, AppHeaderStyle.monthLabelTopPadding)
                                 ForEach(section.contacts) { contact in
                                     if let index = vm.contacts.firstIndex(where: { $0.id == contact.id }) {
                                         NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {

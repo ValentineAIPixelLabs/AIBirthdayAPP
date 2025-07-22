@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 final class ChatGPTService {
     static let shared = ChatGPTService()
@@ -125,7 +126,7 @@ final class ChatGPTService {
     }
 
     /// Генерирует праздничную иллюстрацию на основе хобби, интересов, leisure и доп. информации (без текста)
-    func generateCard(for contact: Contact, apiKey: String, completion: @escaping (Result<URL, Error>) -> Void) {
+    func generateCard(for contact: Contact, apiKey: String, completion: @escaping () -> Void) {
         
         let description = """
         Name: \(contact.name)
@@ -139,16 +140,15 @@ final class ChatGPTService {
         """
 
         let finalPrompt = """
-        A cute cartoonish personage with a thin outline is the main character of a birthday illustration. The phrase “С днём рождения!” in Cyrillic should be clearly visible at the top of the image with enough margin so it is not cut off. \(description) The background is a warm textured cream tone. Around the cat are colorful and playful confetti in warm shades, conveying a festive and harmonious atmosphere. No people, no faces, no text, no words, no letters or symbols.
+        A cute cartoonish personage with a thin outline is the main character of a birthday illustration. The phrase “С днём рождения!” in Cyrillic should be clearly visible at the top of the image with enough margin so it is not cut off. \(description) The background is a warm textured cream tone. Around the  personage are colorful and playful confetti in warm shades, conveying a festive and harmonious atmosphere. No people, no faces, no text, no words, no letters or symbols.
         """
 
         print("🧠 Final image prompt: \n\(finalPrompt)")
         self.requestImageGeneration(prompt: finalPrompt, apiKey: apiKey, contactId: contact.id, completion: completion)
     }
 
-    private func requestImageGeneration(prompt: String, apiKey: String, contactId: UUID, completion: @escaping (Result<URL, Error>) -> Void) {
+    private func requestImageGeneration(prompt: String, apiKey: String, contactId: UUID, completion: @escaping () -> Void) {
         guard let url = URL(string: "https://api.openai.com/v1/images/generations") else {
-            completion(.failure(NSError(domain: "Invalid DALL-E URL", code: -10)))
             return
         }
         var request = URLRequest(url: url)
@@ -167,50 +167,35 @@ final class ChatGPTService {
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         } catch {
-            completion(.failure(error))
             return
         }
 
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                completion(.failure(error))
+            if let _ = error {
                 return
             }
             guard let data = data else {
-                completion(.failure(NSError(domain: "No data", code: -11)))
                 return
             }
 
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    print("🔎 OpenAI Response JSON: \(json)")
+                    
                     if let dataArr = json["data"] as? [[String: Any]],
                        let base64String = dataArr.first?["b64_json"] as? String,
                        let imageData = Data(base64Encoded: base64String) {
-                        do {
-                            let fileManager = FileManager.default
-                            let documentsURL = try fileManager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-                            let cardsDirectory = documentsURL.appendingPathComponent("Cards")
-                            if !fileManager.fileExists(atPath: cardsDirectory.path) {
-                                try fileManager.createDirectory(at: cardsDirectory, withIntermediateDirectories: true)
+                        if let image = UIImage(data: imageData) {
+                            let newCardId = UUID()
+                            let newCard = CardHistoryItem(id: newCardId, date: Date(), cardID: newCardId.uuidString)
+                            CardHistoryManager.addCard(item: newCard, image: image, for: contactId)
+                            DispatchQueue.main.async {
+                                completion()
                             }
-                            let contactIdPrefix = contactId.uuidString
-                            let fileName = "\(contactIdPrefix)_\(UUID().uuidString).png"
-                            let fileURL = cardsDirectory.appendingPathComponent(fileName)
-                            try imageData.write(to: fileURL)
-                            completion(.success(fileURL))
-                        } catch {
-                            completion(.failure(error))
                         }
-                    } else if let error = json["error"] as? [String: Any],
-                              let message = error["message"] as? String {
-                        completion(.failure(NSError(domain: message, code: -12)))
-                    } else {
-                        completion(.failure(NSError(domain: "Unexpected DALL-E response", code: -13)))
                     }
                 }
             } catch {
-                completion(.failure(error))
+                return
             }
         }
         task.resume()
