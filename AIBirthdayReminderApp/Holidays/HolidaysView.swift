@@ -58,6 +58,7 @@ private struct HolidayContent: View {
         @State private var showCongratsSheet: Bool = false
         @State private var holidayForCongratsSheet: Holiday? = nil
         @State private var selectedMode: String? = nil // "text" или "card"
+        @State private var showAddMenu = false
         
         var holidayTypes: [String] {
             let types = Set(viewModel.holidays.map { $0.type.title })
@@ -158,6 +159,30 @@ private struct HolidayContent: View {
                     viewModel.addHoliday(holiday)
                 }
             }
+            .confirmationDialog("Добавить праздник", isPresented: $showAddMenu, titleVisibility: .visible) {
+                Button("Ввести праздник вручную", systemImage: "pencil") {
+                    showAddHoliday = true
+                }
+                Button("Импортировать из календаря", systemImage: "calendar.badge.plus") {
+                    isImporting = true
+                    calendarImporter.requestAccess { granted in
+                        if granted {
+                            calendarImporter.fetchHolidayEvents { importedHolidays in
+                                let newHolidays = importedHolidays.filter { imp in
+                                    !viewModel.holidays.contains(where: { $0.title == imp.title && Calendar.current.isDate($0.date, inSameDayAs: imp.date) })
+                                }
+                                for holiday in newHolidays {
+                                    viewModel.addHoliday(holiday)
+                                }
+                                isImporting = false
+                            }
+                        } else {
+                            calendarImportError = "Нет доступа к календарю. Включите доступ в настройках."
+                            isImporting = false
+                        }
+                    }
+                }
+            }
             .navigationDestination(item: $selectedHoliday) { holiday in
                 HolidayDetailView(holiday: holiday, vm: viewModel)
             }
@@ -198,74 +223,6 @@ private struct HolidayContent: View {
                 leftButtons: [],
                 rightButtons: [
                     AnyView(
-                        Group {
-                            if isImporting {
-                                ProgressView()
-                                    .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                                    .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                                    .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                            } else {
-                                Button {
-                                    isImporting = true
-                                    calendarImporter.requestAccess { granted in
-                                        if granted {
-                                            calendarImporter.fetchHolidayEvents { importedHolidays in
-                                                let newHolidays = importedHolidays.filter { imp in
-                                                    !viewModel.holidays.contains(where: { $0.title == imp.title && Calendar.current.isDate($0.date, inSameDayAs: imp.date) })
-                                                }
-                                                for holiday in newHolidays {
-                                                    viewModel.addHoliday(holiday)
-                                                }
-                                                isImporting = false
-                                            }
-                                        } else {
-                                            calendarImportError = "Нет доступа к календарю. Включите доступ в настройках."
-                                            isImporting = false
-                                        }
-                                    }
-                                } label: {
-                                    Image(systemName: "calendar.badge.plus")
-                                }
-                                .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                                .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                                .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                                .foregroundColor(AppButtonStyle.Circular.iconColor)
-                                .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-                            }
-                        }
-                    ),
-                    AnyView(
-                        Button(action: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                isSearchActive.toggle()
-                                if !isSearchActive {
-                                    searchText = ""
-                                }
-                            }
-                        }) {
-                            Image(systemName: "magnifyingglass")
-                        }
-                        .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                        .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                        .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                        .foregroundColor(AppButtonStyle.Circular.iconColor)
-                        .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-                        .accessibilityLabel("Поиск")
-                    ),
-                    AnyView(
-                        Button(action: {
-                            showAddHoliday = true
-                        }) {
-                            Image(systemName: "plus")
-                        }
-                        .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                        .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                        .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                        .foregroundColor(AppButtonStyle.Circular.iconColor)
-                        .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-                        .accessibilityLabel("Добавить праздник")
-                    ),
-                    AnyView(
                         Button(action: {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 // Закрываем секцию скрытых праздников и restore-режим при активации массового выбора
@@ -288,6 +245,37 @@ private struct HolidayContent: View {
                         .foregroundColor(AppButtonStyle.Circular.iconColor)
                         .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
                         .accessibilityLabel(isSelectionMode ? "Выйти из режима выбора" : "Выбрать праздники")
+                    ),
+                    AnyView(
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isSearchActive.toggle()
+                                if !isSearchActive {
+                                    searchText = ""
+                                }
+                            }
+                        }) {
+                            Image(systemName: "magnifyingglass")
+                        }
+                        .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
+                        .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
+                        .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
+                        .foregroundColor(AppButtonStyle.Circular.iconColor)
+                        .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
+                        .accessibilityLabel("Поиск")
+                    ),
+                    AnyView(
+                        Button(action: {
+                            showAddMenu = true
+                        }) {
+                            Image(systemName: "plus")
+                        }
+                        .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
+                        .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
+                        .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
+                        .foregroundColor(AppButtonStyle.Circular.iconColor)
+                        .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
+                        .accessibilityLabel("Добавить праздник")
                     )
                 ]
             )
@@ -345,73 +333,39 @@ private struct HolidayContent: View {
         }
 
         private var holidaysLists: some View {
-            Group {
+            // Новый способ группировки и сортировки месяцев (по текущему, следующему и далее)
+            let now = Date()
+            let calendar = Calendar.current
+            let currentMonth = calendar.component(.month, from: now)
+            let monthsWithHolidays = Set(filteredVisibleHolidays.map { calendar.component(.month, from: $0.date) }).sorted()
+
+            var sortedMonths: [Int] = []
+            if let startMonth = monthsWithHolidays.first(where: { $0 >= currentMonth }) ?? monthsWithHolidays.first {
+                sortedMonths.append(contentsOf: monthsWithHolidays.filter { $0 >= startMonth })
+                sortedMonths.append(contentsOf: monthsWithHolidays.filter { $0 < startMonth })
+            }
+
+            let monthsDict = Dictionary(grouping: filteredVisibleHolidays) { calendar.component(.month, from: $0.date) }
+            let monthSymbols = DateFormatter().standaloneMonthSymbols ?? []
+
+            return Group {
                 ZStack(alignment: .bottom) {
                     ScrollViewReader { scrollProxy in
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 18) {
                                 // Список видимых праздников, если есть
                                 if !filteredVisibleHolidays.isEmpty {
-                                    ForEach(groupedHolidays.keys.sorted(by: { key1, key2 in
-                                        if sortMode == .date {
-                                            let formatter = DateFormatter()
-                                            formatter.locale = Locale(identifier: "ru_RU")
-                                            formatter.dateFormat = "LLLL"
-                                            guard let date1 = formatter.date(from: key1),
-                                                  let date2 = formatter.date(from: key2) else { return false }
-                                            return date1 < date2
-                                        } else {
-                                            return key1 < key2
-                                        }
-                                    }), id: \.self) { sectionKey in
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text(sectionKey)
-                                                .font(.callout).bold()
-                                                .foregroundColor(.secondary)
-                                                .padding(.top, AppHeaderStyle.monthLabelTopPadding)
-                                                .padding(.leading, 20)
-                                            ForEach(groupedHolidays[sectionKey] ?? [], id: \.id) { holiday in
-                                                HStack(alignment: .center, spacing: 0) {
-                                                    if isSelectionMode {
-                                                        Button(action: {
-                                                            if selectedHolidays.contains(holiday.id) {
-                                                                selectedHolidays.remove(holiday.id)
-                                                            } else {
-                                                                selectedHolidays.insert(holiday.id)
-                                                            }
-                                                        }) {
-                                                            Image(systemName: selectedHolidays.contains(holiday.id) ? "checkmark.circle.fill" : "circle")
-                                                                .foregroundColor(selectedHolidays.contains(holiday.id) ? .accentColor : .secondary)
-                                                                .font(.system(size: 28))
-                                                                .padding(.trailing, 8)
-                                                        }
-                                                        .buttonStyle(PlainButtonStyle())
-                                                    }
-                                                    HolidayCardView(
-                                                        holiday: holiday,
-                                                        viewModel: viewModel,
-                                                        selectedHoliday: $selectedHoliday,
-                                                        selectedHolidayForCongrats: $selectedHolidayForCongrats,
-                                                        showCongratsSheet: $showCongratsSheet,
-                                                        holidayForCongratsSheet: $holidayForCongratsSheet,
-                                                        onEdit: { holiday in
-                                                            holidayToEdit = holiday
-                                                        }
-                                                    )
-                                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                                    .onTapGesture {
-                                                        if isSelectionMode {
-                                                            if selectedHolidays.contains(holiday.id) {
-                                                                selectedHolidays.remove(holiday.id)
-                                                            } else {
-                                                                selectedHolidays.insert(holiday.id)
-                                                            }
-                                                        } else {
-                                                            selectedHoliday = holiday
-                                                        }
-                                                    }
+                                    ForEach(sortedMonths, id: \.self) { month in
+                                        if let holidays = monthsDict[month], !holidays.isEmpty {
+                                            VStack(alignment: .leading, spacing: 8) {
+                                                Text(monthSymbols.indices.contains(month-1) ? monthSymbols[month-1].capitalized : "Месяц")
+                                                    .font(.callout).bold()
+                                                    .foregroundColor(.secondary)
+                                                    .padding(.top, AppHeaderStyle.monthLabelTopPadding)
+                                                    .padding(.leading, 20)
+                                                ForEach(holidays.sorted(by: { $0.date < $1.date }), id: \.id) { holiday in
+                                                    holidayRow(holiday: holiday)
                                                 }
-                                                .padding(.horizontal, 20)
                                             }
                                         }
                                     }
@@ -533,6 +487,53 @@ private struct HolidayContent: View {
                     }
                 }
             }
+        }
+
+        // monthSection больше не нужен, секции строятся через groupedHolidays
+
+        @ViewBuilder
+        private func holidayRow(holiday: Holiday) -> some View {
+            HStack(alignment: .center, spacing: 0) {
+                if isSelectionMode {
+                    Button(action: {
+                        if selectedHolidays.contains(holiday.id) {
+                            selectedHolidays.remove(holiday.id)
+                        } else {
+                            selectedHolidays.insert(holiday.id)
+                        }
+                    }) {
+                        Image(systemName: selectedHolidays.contains(holiday.id) ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(selectedHolidays.contains(holiday.id) ? .accentColor : .secondary)
+                            .font(.system(size: 28))
+                            .padding(.trailing, 8)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                HolidayCardView(
+                    holiday: holiday,
+                    viewModel: viewModel,
+                    selectedHoliday: $selectedHoliday,
+                    selectedHolidayForCongrats: $selectedHolidayForCongrats,
+                    showCongratsSheet: $showCongratsSheet,
+                    holidayForCongratsSheet: $holidayForCongratsSheet,
+                    onEdit: { holiday in
+                        holidayToEdit = holiday
+                    }
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .onTapGesture {
+                    if isSelectionMode {
+                        if selectedHolidays.contains(holiday.id) {
+                            selectedHolidays.remove(holiday.id)
+                        } else {
+                            selectedHolidays.insert(holiday.id)
+                        }
+                    } else {
+                        selectedHoliday = holiday
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
         }
 
         private var selectionBottomBar: some View {
@@ -671,7 +672,7 @@ private struct HolidayCardView: View {
     var isHidden: Bool = false
     var onEdit: ((Holiday) -> Void)? = nil
     @State private var isPressed = false
-
+    
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 16) {
@@ -741,9 +742,9 @@ private struct HolidayCardView: View {
         return formatter.string(from: date)
     }
     // colorForType и isSingleEmoji больше не используются
+    
+    #Preview {
+        HolidaysView()
+    }
+    
 }
-
-#Preview {
-    HolidaysView()
-}
-

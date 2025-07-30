@@ -9,6 +9,7 @@ struct SettingsTabView: View {
     @State private var isContactPickerPresented = false
     @State private var showImportAlert = false
     @State private var importAlertMessage = ""
+    @State private var showAPIKeySheet = false
 
     var body: some View {
         
@@ -16,6 +17,17 @@ struct SettingsTabView: View {
             
             List {
                 
+                Section(header: Text("OpenAI")) {
+                    Button {
+                        showAPIKeySheet = true
+                    } label: {
+                        Label("Ввести ключ OpenAI", systemImage: "key")
+                            .font(.headline)
+                            .padding(.vertical, 8)
+                    }
+                    .foregroundColor(.primary)
+                }
+
                 Section {
                     Button {
                         showNotificationSettings = true
@@ -78,6 +90,9 @@ struct SettingsTabView: View {
             }
             .alert(isPresented: $showImportAlert) {
                 Alert(title: Text("Импорт контактов"), message: Text(importAlertMessage), dismissButton: .default(Text("Ок")))
+            }
+            .sheet(isPresented: $showAPIKeySheet) {
+                APIKeyView()
             }
         }
     }

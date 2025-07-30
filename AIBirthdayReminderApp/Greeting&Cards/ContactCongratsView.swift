@@ -50,6 +50,9 @@ struct ContactCongratsView: View {
     @State private var cardPopupUrl: URL?
     @State private var showCardShareSheet = false
 
+    @State private var fakeProgress: Double = 0
+    @State private var progressTimer: Timer? = nil
+
     init(contact: Binding<Contact>, selectedMode: String) {
         self._contact = contact
         self.selectedMode = selectedMode
@@ -60,29 +63,55 @@ struct ContactCongratsView: View {
     var body: some View {
         ZStack {
             AppBackground()
-            ScrollView {
-                GeometryReader { geo in
-                    Color.clear
-                        .preference(key: ScrollOffsetPreferenceKey.self, value: geo.frame(in: .named("scroll")).minY)
-                }
-                .frame(height: 0)
-                GeometryReader { geo in
-                    VStack(spacing: 0) {
-                        if headerVisible {
-                            topButtons(geo: geo)
-                                .transition(.move(edge: .top).combined(with: .opacity))
+            VStack(spacing: 0) {
+                // Fixed Top Bar
+            AppTopBar(
+                title: "",
+                leftButtons: [
+                    AnyView(
+                        Button(action: { dismiss() }) {
+                            Image(systemName: "chevron.backward")
+                                .font(.system(size: 22, weight: .bold))
+                                .frame(width: 40, height: 40)
+                                .background(Circle().fill(Color(.systemGray6)))
+                                .shadow(radius: 2)
                         }
+                    )
+                ],
+                rightButtons: [
+                    AnyView(
+                        HStack(spacing: 4) {
+                            Image(systemName: "bolt.fill")
+                                .foregroundColor(.yellow)
+                                .font(.system(size: 15, weight: .semibold))
+                            Text("100")
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                                .foregroundColor(.primary)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(Color(.systemGray6)))
+                        .shadow(radius: 2)
+                    )
+                ]
+            )
+                // Scrollable Content
+                ScrollView {
+                    VStack(spacing: 0) {
                         mainContent()
                     }
-                }
-            }
-            .coordinateSpace(name: "scroll")
-            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { offset in
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    headerVisible = offset > -32
+                    .padding(.top, 8)
                 }
             }
         }
+        .onTapGesture {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+        .gesture(
+            DragGesture().onChanged { _ in
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+        )
         .onAppear {
             cardHistory = CardHistoryManager.getCards(for: contact.id)
             congratsHistory = CongratsHistoryManager.getCongrats(for: contact.id)
@@ -93,11 +122,17 @@ struct ContactCongratsView: View {
                 if isLoading {
                     ZStack {
                         Color.black.opacity(0.2).ignoresSafeArea()
-                        ProgressView("Генерация...")
-                            .progressViewStyle(CircularProgressViewStyle())
-                            .padding()
-                            .background(Color(.systemBackground))
-                            .cornerRadius(14)
+                        VStack(spacing: 16) {
+                            ProgressView(value: fakeProgress)
+                                .progressViewStyle(LinearProgressViewStyle())
+                                .frame(width: 200)
+                            Text("Генерация... \(Int(fakeProgress * 100))%")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(14)
                     }
                 }
             }
@@ -249,23 +284,6 @@ struct ContactCongratsView: View {
         .padding(.bottom, 32)
     }
 
-    // MARK: - Top Buttons
-    private func topButtons(geo: GeometryProxy) -> some View {
-        HStack {
-            // Левая кнопка "Назад"
-            Button(action: { dismiss() }) {
-                Image(systemName: "chevron.backward")
-                    .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                    .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                    .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                    .foregroundColor(AppButtonStyle.Circular.iconColor)
-                    .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, geo.safeAreaInsets.top + 8)
-    }
 
     // MARK: - Generate Buttons
     private func generateButtons() -> some View {
@@ -318,21 +336,28 @@ struct ContactCongratsView: View {
                 .disabled(isLoading)
             } else if selectedMode == "card" {
                 Button(action: handleGenerate) {
-                    HStack(alignment: .center, spacing: 10) {
-                        Image(systemName: "photo.on.rectangle.angled")
-                            .font(.system(size: 18, weight: .semibold))
+                    HStack(spacing: 10) {
+                        Spacer()
+                        Text("Сгенерировать открытку")
+                            .font(.subheadline.weight(.bold))
                             .foregroundColor(.white)
-                            .frame(width: 24)
-                        Text("Сгенерировать\nоткрытку")
-                            .font(.caption.weight(.bold))
-                            .foregroundColor(.white)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.85)
+                            .lineLimit(1)
+                            .frame(maxHeight: .infinity)
+                        HStack(spacing: 3) {
+                            Image(systemName: "bolt.fill")
+                                .foregroundColor(.yellow)
+                                .font(.system(size: 15, weight: .semibold))
+                            Text("25")
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color(.systemYellow).opacity(0.14)))
+                        Spacer()
                     }
-                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: 48)
                     .padding(.vertical, 6)
-                    .padding(.leading, 12)
                     .background(
                         RoundedRectangle(cornerRadius: AppButtonStyle.Congratulate.cornerRadius, style: .continuous)
                             .fill(AppButtonStyle.Congratulate.backgroundColor)
@@ -340,18 +365,18 @@ struct ContactCongratsView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .opacity(isLoading ? 0.6 : 1)
-                .disabled(isLoading)
+                .opacity(isLoading || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.6 : 1)
+                .disabled(isLoading || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(.horizontal)
     }
-        // это из кода cardfullscreenview
+        
     // MARK: - Card Generation State & Handlers
     @State private var referenceImage: UIImage? = nil
     @State private var showImagePicker: Bool = false
     @State private var prompt: String = ""
-    private let promptCharLimit: Int = 4000
+    private let promptCharLimit: Int = 500
     @State private var selectedCardStyle: CardVisualStyle = .classic
     @State private var selectedAspectRatio: CardAspectRatio = .square
     @State private var selectedQuality: CardQuality = .medium
@@ -365,18 +390,46 @@ struct ContactCongratsView: View {
             alertMessage = "Нет данных контакта или API-ключа."
             return
         }
-        // Здесь можно использовать referenceImage, prompt, selectedCardStyle, selectedAspectRatio, selectedQuality
+        // Start fake progress
+        let maxSeconds = 240.0 // 4 минуты
+        let tick: Double = 0.6
+        fakeProgress = 0
+        progressTimer?.invalidate()
+        progressTimer = Timer.scheduledTimer(withTimeInterval: tick, repeats: true) { _ in
+            withAnimation {
+                let step = (0.98 * tick) / maxSeconds
+                if fakeProgress < 0.98 {
+                    fakeProgress += step
+                }
+            }
+        }
         isLoading = true
         // Заглушка: можно передать параметры в сервис генерации открыток
-        ChatGPTService.shared.generateCard(for: contact, apiKey: apiKey) {
+        ChatGPTService.shared.generateCard(
+            for: contact,
+            prompt: prompt,
+            apiKey: apiKey,
+            quality: {
+                switch selectedQuality {
+                    case .low: return "low"
+                    case .medium: return "medium"
+                    case .high: return "high"
+                }
+            }(),
+            referenceImage: referenceImage
+        ) {
             print("📥 Открытка успешно сохранена, загружаем историю")
-            cardHistory = CardHistoryManager.getCards(for: contact.id)
-            print("📊 История открыток после генерации: \(cardHistory.count) шт.")
-            if let latest = cardHistory.first, let image = latest.image {
-                cardPopupImage = image
-                showCardPopup = true
+            DispatchQueue.main.async {
+                cardHistory = CardHistoryManager.getCards(for: contact.id)
+                print("📊 История открыток после генерации: \(cardHistory.count) шт.")
+                if let latest = cardHistory.first, let image = latest.image {
+                    cardPopupImage = image
+                    showCardPopup = true
+                }
+                isLoading = false
+                progressTimer?.invalidate()
+                fakeProgress = 1
             }
-            isLoading = false
         }
     }
 
@@ -496,7 +549,7 @@ private struct CongratsHistoryItemView: View {
 private func contactBlock(contact: Contact) -> some View {
     Group {
             HStack(alignment: .top, spacing: 12) {
-                Text("Кому: " + contact.name)
+                Text("День рождения: " + contact.name)
                     .font(CardStyle.Detail.font)
                     .foregroundColor(.primary)
                 Spacer()
@@ -833,132 +886,150 @@ private struct CardGenerationSection: View {
     var onRemoveReferenceImage: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Reference Image Section
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Reference-изображение (необязательно)")
-                    .font(.subheadline.weight(.medium))
-                HStack(spacing: 12) {
-                    if let image = referenceImage {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 74, height: 74)
-                            .clipped()
-                            .cornerRadius(12)
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.18), lineWidth: 1))
-                        Button(action: onRemoveReferenceImage) {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
-                                .padding(8)
-                                .background(Color(.systemGray6))
-                                .clipShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        Button(action: { showImagePicker = true }) {
-                            VStack(spacing: 4) {
-                                Image(systemName: "photo.badge.plus")
-                                    .font(.system(size: 26, weight: .regular))
-                                    .foregroundColor(.accentColor)
-                                Text("Загрузить")
-                                    .font(.caption)
-                                    .foregroundColor(.accentColor)
+        ZStack {
+            VStack(alignment: .leading, spacing: 14) {
+                // Reference Image Section
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Reference")
+                        .font(.subheadline.weight(.medium))
+                    HStack(spacing: 12) {
+                        if let image = referenceImage {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 74, height: 74)
+                                .clipped()
+                                .cornerRadius(12)
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.18), lineWidth: 1))
+                            Button(action: onRemoveReferenceImage) {
+                                Image(systemName: "trash")
+                                    .foregroundColor(.red)
+                                    .padding(8)
+                                    .background(Color(.systemGray6))
+                                    .clipShape(Circle())
                             }
-                            .frame(width: 74, height: 74)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(12)
+                            .buttonStyle(.plain)
+                        } else {
+                            Button(action: { showImagePicker = true }) {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "photo.badge.plus")
+                                        .font(.system(size: 26, weight: .regular))
+                                        .foregroundColor(.accentColor)
+                                    Text("Загрузить")
+                                        .font(.caption)
+                                        .foregroundColor(.accentColor)
+                                }
+                                .frame(width: 74, height: 74)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(12)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
-            }
 
-            // Prompt TextEditor
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Промт для открытки")
-                    .font(.subheadline.weight(.medium))
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: $prompt)
-                        .frame(minHeight: 72, maxHeight: 120)
-                        .padding(6)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.gray.opacity(0.14), lineWidth: 1))
-                    if prompt.isEmpty {
-                        Text("Введите промт (до \(promptCharLimit) символов)...")
-                            .foregroundColor(.secondary)
-                            .padding(.top, 12)
-                            .padding(.leading, 16)
-                            .font(.callout)
+                // Новый блок: внешний вид поля и кнопки согласно инструкции
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Промт для открытки")
+                        .font(.subheadline.weight(.medium))
+
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $prompt)
+                            .font(.body)
+                            .foregroundColor(.primary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 14)
+                            .frame(minHeight: 100, maxHeight: 120)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.white)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                        .stroke(lineWidth: 0)
+                                    )
+                            )
+                            .cornerRadius(12)
+                        if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text("Подробно опишите идею открытки или нажмите кнопку «Идея открытки»")
+                                .foregroundColor(.secondary)
+                                .font(.body)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 18)
+                                .allowsHitTesting(false)
+                        }
                     }
+
+                    Button(action: onGeneratePrompt) {
+                        VStack(spacing: 2) {
+                            Text("Идея открытки")
+                                .font(.callout.bold())
+                                .foregroundColor(.black)
+                            Text("по данным контакта")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(.systemGray5))
+                        .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 0)
+                .padding(.horizontal, 0)
+                .background(
+                    Color.clear
+                        .contentShape(Rectangle())
+                )
                 HStack {
                     Spacer()
                     Text("\(prompt.count)/\(promptCharLimit)")
                         .font(.caption2)
                         .foregroundColor(prompt.count > promptCharLimit ? .red : .secondary)
                 }
-            }
 
-            // Generate Prompt Button
-            Button(action: onGeneratePrompt) {
-                HStack {
-                    Image(systemName: "wand.and.stars")
-                        .font(.system(size: 16, weight: .semibold))
-                    Text("Сгенерировать промт")
-                        .font(.callout.weight(.bold))
-                }
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 9)
-                        .fill(Color.accentColor.opacity(0.13))
-                )
-            }
-            .buttonStyle(.plain)
-
-            // Card Style Picker
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Стиль открытки")
-                    .font(.subheadline.weight(.medium))
-                Picker("Стиль", selection: $selectedCardStyle) {
-                    ForEach(CardVisualStyle.allCases) { style in
-                        Text(style.rawValue).tag(style)
+                // Card Style Picker
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Стиль открытки")
+                        .font(.subheadline.weight(.medium))
+                    Picker("Стиль", selection: $selectedCardStyle) {
+                        ForEach(CardVisualStyle.allCases) { style in
+                            Text(style.rawValue).tag(style)
+                        }
                     }
+                    .pickerStyle(MenuPickerStyle())
                 }
-                .pickerStyle(MenuPickerStyle())
-            }
 
-            // Aspect Ratio Picker
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Соотношение сторон")
-                    .font(.subheadline.weight(.medium))
-                Picker("Формат", selection: $selectedAspectRatio) {
-                    ForEach(CardAspectRatio.allCases) { ratio in
-                        Text(ratio.displayName).tag(ratio)
+                // Aspect Ratio Picker
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Соотношение сторон")
+                        .font(.subheadline.weight(.medium))
+                    Picker("Формат", selection: $selectedAspectRatio) {
+                        ForEach(CardAspectRatio.allCases) { ratio in
+                            Text(ratio.displayName).tag(ratio)
+                        }
                     }
+                    .pickerStyle(SegmentedPickerStyle())
                 }
-                .pickerStyle(SegmentedPickerStyle())
-            }
 
-            // Quality Picker
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Качество")
-                    .font(.subheadline.weight(.medium))
-                Picker("Качество", selection: $selectedQuality) {
-                    ForEach(CardQuality.allCases) { q in
-                        Text(q.displayName).tag(q)
+                // Quality Picker
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Качество")
+                        .font(.subheadline.weight(.medium))
+                    Picker("Качество", selection: $selectedQuality) {
+                        ForEach(CardQuality.allCases) { q in
+                            Text(q.displayName).tag(q)
+                        }
                     }
+                    .pickerStyle(SegmentedPickerStyle())
                 }
-                .pickerStyle(SegmentedPickerStyle())
             }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 2)
-        .sheet(isPresented: $showImagePicker) {
-            ImagePicker { image in
-                referenceImage = image
+            .padding(.horizontal, 16)
+            .padding(.top, 2)
+            .sheet(isPresented: $showImagePicker) {
+                ImagePicker { image in
+                    referenceImage = image
+                }
             }
         }
     }
@@ -989,14 +1060,15 @@ enum CardAspectRatio: String, CaseIterable, Identifiable {
 }
 
 enum CardQuality: String, CaseIterable, Identifiable {
+    case low = "Низкое"
     case medium = "Среднее"
     case high = "Высокое"
     var id: String { rawValue }
     var displayName: String {
         switch self {
+        case .low: return "Низкое"
         case .medium: return "Среднее"
         case .high: return "Высокое"
         }
     }
 }
-

@@ -210,12 +210,42 @@ struct HolidayCongratsTextView: View {
     // MARK: - Генерация поздравления
     private func generateCongrats(for contact: Contact?) {
         isGenerating = true
-        // Здесь должен быть вызов AI-генерации поздравления (или своя логика)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: {
-            let base = "Сгенерированное поздравление с праздником \(holiday.title)" + (contact != nil ? " для \(contact!.name)" : "")
-            CardHistoryStore.addCongrats(base, for: holiday.id.uuidString)
-            history = CardHistoryStore.loadCongratsHistory(for: holiday.id.uuidString)
-            isGenerating = false
-        })
+        let apiKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
+
+        if let contact = contact {
+            // Персонализированное поздравление
+            ChatGPTService.shared.generateHolidayGreeting(for: contact, holidayTitle: holiday.title, apiKey: apiKey) { result in
+                DispatchQueue.main.async {
+                    isGenerating = false
+                    switch result {
+                    case .success(let congrats):
+                        CardHistoryStore.addCongrats(congrats, for: holiday.id.uuidString)
+                        history = CardHistoryStore.loadCongratsHistory(for: holiday.id.uuidString)
+                        selectedCongrats = congrats
+                        showCongratsPopup = true
+                    case .failure(let error):
+                        selectedCongrats = "Ошибка генерации: \(error.localizedDescription)"
+                        showCongratsPopup = true
+                    }
+                }
+            }
+        } else {
+            // Общее поздравление
+            ChatGPTService.shared.generateHolidayGreeting(for: holiday.title, apiKey: apiKey) { result in
+                DispatchQueue.main.async {
+                    isGenerating = false
+                    switch result {
+                    case .success(let congrats):
+                        CardHistoryStore.addCongrats(congrats, for: holiday.id.uuidString)
+                        history = CardHistoryStore.loadCongratsHistory(for: holiday.id.uuidString)
+                        selectedCongrats = congrats
+                        showCongratsPopup = true
+                    case .failure(let error):
+                        selectedCongrats = "Ошибка генерации: \(error.localizedDescription)"
+                        showCongratsPopup = true
+                    }
+                }
+            }
+        }
     }
 }
