@@ -31,6 +31,9 @@ struct ScrollOffsetPreferenceKey: PreferenceKey {
 
 // MARK: - Main View
 struct ContactCongratsView: View {
+    enum LoadingType {
+        case image, prompt
+    }
     @Environment(\.dismiss) private var dismiss
     @Binding var contact: Contact
     @State private var cardHistory: [CardHistoryItemWithImage] = []
@@ -52,6 +55,7 @@ struct ContactCongratsView: View {
 
     @State private var fakeProgress: Double = 0
     @State private var progressTimer: Timer? = nil
+    @State private var loadingType: LoadingType? = nil
 
     init(contact: Binding<Contact>, selectedMode: String) {
         self._contact = contact
@@ -122,17 +126,30 @@ struct ContactCongratsView: View {
                 if isLoading {
                     ZStack {
                         Color.black.opacity(0.2).ignoresSafeArea()
-                        VStack(spacing: 16) {
-                            ProgressView(value: fakeProgress)
-                                .progressViewStyle(LinearProgressViewStyle())
-                                .frame(width: 200)
-                            Text("Генерация... \(Int(fakeProgress * 100))%")
-                                .font(.headline)
-                                .foregroundColor(.primary)
+                        if loadingType == .image {
+                            VStack(spacing: 16) {
+                                ProgressView(value: fakeProgress)
+                                    .progressViewStyle(LinearProgressViewStyle())
+                                    .frame(width: 200)
+                                Text("Генерация открытки... \(Int(fakeProgress * 100))%")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                            }
+                            .padding()
+                            .background(Color(.systemBackground))
+                            .cornerRadius(14)
+                        } else if loadingType == .prompt {
+                            VStack(spacing: 16) {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                Text("Генерируем идею открытки...")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                            }
+                            .padding()
+                            .background(Color(.systemBackground))
+                            .cornerRadius(14)
                         }
-                        .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(14)
                     }
                 }
             }
@@ -400,6 +417,7 @@ struct ContactCongratsView: View {
             resetCardGenerationSettings()
             return
         }
+        loadingType = .image
         // Start fake progress
         let maxSeconds = 120.0 // 2 минуты
         let tick: Double = 0.6
@@ -446,6 +464,7 @@ struct ContactCongratsView: View {
                     showCardPopup = true
                 }
                 isLoading = false
+                loadingType = nil
                 progressTimer?.invalidate()
                 fakeProgress = 1
                 resetCardGenerationSettings()
@@ -471,10 +490,12 @@ struct ContactCongratsView: View {
             alertMessage = "Не найден API-ключ для генерации промта."
             return
         }
+        loadingType = .prompt
         isLoading = true
         ChatGPTService.shared.generateCreativePrompt(for: contact, apiKey: apiKey) { result in
             DispatchQueue.main.async {
                 isLoading = false
+                loadingType = nil
                 switch result {
                 case .success(let creativePrompt):
                     prompt = creativePrompt
