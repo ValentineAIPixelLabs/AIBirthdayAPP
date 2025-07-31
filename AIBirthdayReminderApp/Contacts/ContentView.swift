@@ -404,6 +404,16 @@ private struct ContactsMainContent: View {
                         )
                     ),
                     AnyView(
+                        Button(action: { showAPIKeySheet = true }) {
+                            Image(systemName: "key")
+                                .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
+                                .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
+                                .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
+                                .foregroundColor(AppButtonStyle.Circular.iconColor)
+                                .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
+                        }
+                    ),
+                    AnyView(
                         Button(action: {
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 isSearchActive.toggle()
