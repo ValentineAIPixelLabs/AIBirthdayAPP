@@ -365,8 +365,17 @@ struct ContactCongratsView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .opacity(isLoading || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.6 : 1)
-                .disabled(isLoading || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .opacity(
+                    isLoading ||
+                    prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    prompt.count > promptCharLimit
+                    ? 0.6 : 1
+                )
+                .disabled(
+                    isLoading ||
+                    prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    prompt.count > promptCharLimit
+                )
             }
         }
         .padding(.horizontal)
@@ -376,7 +385,7 @@ struct ContactCongratsView: View {
     @State private var referenceImage: UIImage? = nil
     @State private var showImagePicker: Bool = false
     @State private var prompt: String = ""
-    private let promptCharLimit: Int = 500
+    private let promptCharLimit: Int = 1000
     @State private var selectedCardStyle: CardVisualStyle = .classic
     @State private var selectedAspectRatio: CardAspectRatio = .square
     @State private var selectedQuality: CardQuality = .medium
@@ -388,10 +397,11 @@ struct ContactCongratsView: View {
         let apiKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
         guard !apiKey.isEmpty else {
             alertMessage = "Нет данных контакта или API-ключа."
+            resetCardGenerationSettings()
             return
         }
         // Start fake progress
-        let maxSeconds = 240.0 // 4 минуты
+        let maxSeconds = 120.0 // 2 минуты
         let tick: Double = 0.6
         fakeProgress = 0
         progressTimer?.invalidate()
@@ -416,7 +426,8 @@ struct ContactCongratsView: View {
                     case .high: return "high"
                 }
             }(),
-            referenceImage: referenceImage
+            referenceImage: referenceImage,
+            size: selectedAspectRatio.apiValue
         ) {
             print("📥 Открытка успешно сохранена, загружаем историю")
             DispatchQueue.main.async {
@@ -429,8 +440,21 @@ struct ContactCongratsView: View {
                 isLoading = false
                 progressTimer?.invalidate()
                 fakeProgress = 1
+                resetCardGenerationSettings()
             }
         }
+    }
+
+    // MARK: - Card Generation Settings Reset
+    private func resetCardGenerationSettings() {
+        prompt = ""
+        referenceImage = nil
+        selectedCardStyle = .classic
+        selectedAspectRatio = .square
+        selectedQuality = .medium
+        showImagePicker = false
+        fakeProgress = 0
+        progressTimer?.invalidate()
     }
 
     private func generateCreativePrompt() {
@@ -1002,7 +1026,7 @@ private struct CardGenerationSection: View {
 
                 // Aspect Ratio Picker
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Соотношение сторон")
+                    Text("Размер")
                         .font(.subheadline.weight(.medium))
                     Picker("Формат", selection: $selectedAspectRatio) {
                         ForEach(CardAspectRatio.allCases) { ratio in
@@ -1046,16 +1070,19 @@ enum CardVisualStyle: String, CaseIterable, Identifiable {
 }
 
 enum CardAspectRatio: String, CaseIterable, Identifiable {
-    case square = "1:1"
-    case threeFour = "3:4"
-    case sixteenNine = "16:9"
+    case square = "1024x1024"
+    case landscape = "1536x1024"
+    case portrait = "1024x1536"
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .square: return "1:1"
-        case .threeFour: return "3:4"
-        case .sixteenNine: return "16:9"
+        case .square: return "1024x1024"
+        case .landscape: return "1536x1024"
+        case .portrait: return "1024x1536"
         }
+    }
+    var apiValue: String {
+        return self.rawValue
     }
 }
 

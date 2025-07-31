@@ -128,7 +128,7 @@ final class ChatGPTService {
 
     /// Генерирует праздничную иллюстрацию для контакта.
     /// Теперь prompt формируется во View, а старое поведение закомментировано для последующего рефакторинга или восстановления.
-    func generateCard(for contact: Contact, prompt: String, apiKey: String, quality: String, referenceImage: UIImage? = nil, completion: @escaping () -> Void) {
+    func generateCard(for contact: Contact, prompt: String, apiKey: String, quality: String, referenceImage: UIImage? = nil, size: String, completion: @escaping () -> Void) {
 //        let description = """
 //        Name: \(contact.name)
 //        Gender: \(contact.gender ?? "")
@@ -154,10 +154,10 @@ final class ChatGPTService {
             referenceImageData = imageData
         }
 
-        self.requestImageGeneration(prompt: finalPrompt, apiKey: apiKey, contactId: contact.id, quality: quality, referenceImageData: referenceImageData, completion: completion)
+        self.requestImageGeneration(prompt: finalPrompt, apiKey: apiKey, contactId: contact.id, quality: quality, referenceImageData: referenceImageData, size: size, completion: completion)
     }
 
-    private func requestImageGeneration(prompt: String, apiKey: String, contactId: UUID, quality: String, referenceImageData: Data? = nil, completion: @escaping () -> Void) {
+    private func requestImageGeneration(prompt: String, apiKey: String, contactId: UUID, quality: String, referenceImageData: Data? = nil, size: String, completion: @escaping () -> Void) {
         if referenceImageData == nil {
             // Обычная генерация без референса
             guard let url = URL(string: "https://api.openai.com/v1/images/generations") else {
@@ -173,7 +173,7 @@ final class ChatGPTService {
                 "model": "gpt-image-1",
                 "prompt": prompt,
                 "n": 1,
-                "size": "1024x1024",
+                "size": size,
                 "quality": quality
             ]
 
@@ -341,7 +341,7 @@ final class ChatGPTService {
             // size
             body.append("--\(boundary)\r\n".data(using: .utf8)!)
             body.append("Content-Disposition: form-data; name=\"size\"\r\n\r\n".data(using: .utf8)!)
-            body.append("1024x1024".data(using: .utf8)!)
+            body.append(size.data(using: .utf8)!)
             body.append("\r\n".data(using: .utf8)!)
 
             // quality
@@ -629,21 +629,4 @@ final class ChatGPTService {
     }
 }
 
-    /// Обрезает и ресайзит изображение до квадрата нужного размера (по умолчанию 1024x1024)
-    private func cropAndResizeToSquare(_ image: UIImage, size: CGFloat = 1024) -> UIImage? {
-        let originalSize = min(image.size.width, image.size.height)
-        let cropRect = CGRect(
-            x: (image.size.width - originalSize) / 2,
-            y: (image.size.height - originalSize) / 2,
-            width: originalSize,
-            height: originalSize
-        )
-        guard let cgImage = image.cgImage?.cropping(to: cropRect) else { return nil }
-        let cropped = UIImage(cgImage: cgImage)
-        // Resize
-        UIGraphicsBeginImageContextWithOptions(CGSize(width: size, height: size), false, 1.0)
-        cropped.draw(in: CGRect(x: 0, y: 0, width: size, height: size))
-        let resized = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-        return resized
-    }
+    
