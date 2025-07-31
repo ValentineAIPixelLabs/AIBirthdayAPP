@@ -386,7 +386,7 @@ struct ContactCongratsView: View {
     @State private var showImagePicker: Bool = false
     @State private var prompt: String = ""
     private let promptCharLimit: Int = 1000
-    @State private var selectedCardStyle: CardVisualStyle = .classic
+    @State private var selectedCardStyle: CardVisualStyle = .none
     @State private var selectedAspectRatio: CardAspectRatio = .square
     @State private var selectedQuality: CardQuality = .medium
 
@@ -417,7 +417,15 @@ struct ContactCongratsView: View {
         // Заглушка: можно передать параметры в сервис генерации открыток
         ChatGPTService.shared.generateCard(
             for: contact,
-            prompt: prompt,
+            prompt: {
+                let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+                let styleSuffix = selectedCardStyle.promptSuffix
+                if !styleSuffix.isEmpty {
+                    return trimmedPrompt.isEmpty ? styleSuffix : "\(trimmedPrompt)\n\n\(styleSuffix)"
+                } else {
+                    return trimmedPrompt
+                }
+            }(),
             apiKey: apiKey,
             quality: {
                 switch selectedQuality {
@@ -449,7 +457,7 @@ struct ContactCongratsView: View {
     private func resetCardGenerationSettings() {
         prompt = ""
         referenceImage = nil
-        selectedCardStyle = .classic
+        selectedCardStyle = .none
         selectedAspectRatio = .square
         selectedQuality = .medium
         showImagePicker = false
@@ -1076,11 +1084,16 @@ private struct CardGenerationSection: View {
 
 // MARK: - Card Generation Option Enums
 enum CardVisualStyle: String, CaseIterable, Identifiable {
-    case classic = "Классика"
-    case funny = "Смешной"
-    case minimal = "Минимализм"
-    case retro = "Ретро"
+    case none = "Без стиля"
+    case realistic = "Реалистичный"
+    case vanGogh = "Ван Гог"
     case watercolor = "Акварель"
+    case anime = "Аниме"
+    case retro = "Ретро / Винтаж"
+    case minimal = "Минимализм"
+    case pixel = "Пиксель-арт"
+    case popArt = "Комикс / Pop Art"
+    case fantasy = "Фэнтези"
     var id: String { rawValue }
 }
 
@@ -1111,6 +1124,32 @@ enum CardQuality: String, CaseIterable, Identifiable {
         case .low: return "Низкое"
         case .medium: return "Среднее"
         case .high: return "Высокое"
+        }
+    }
+}
+extension CardVisualStyle {
+    var promptSuffix: String {
+        switch self {
+        case .none:
+            return ""
+        case .realistic:
+            return "in a highly realistic, photorealistic style"
+        case .vanGogh:
+            return "in the style of Vincent van Gogh, expressive brush strokes, swirling vivid colors"
+        case .watercolor:
+            return "in delicate watercolor style, soft color washes and gradients, with paper texture"
+        case .anime:
+            return "in bright anime style, sharp lines, big expressive eyes, colorful"
+        case .retro:
+            return "in retro vintage postcard style, muted colors, old paper texture, ornamental frame"
+        case .minimal:
+            return "in minimalistic style, simple clean shapes, lots of white space, pastel colors"
+        case .pixel:
+            return "in pixel art style, 16-bit or 32-bit, nostalgic video game feel"
+        case .popArt:
+            return "in pop art comic style, bold outlines, halftone dots, bright contrasting colors"
+        case .fantasy:
+            return "in fantasy illustration style, magical atmosphere, glowing effects, detailed art"
         }
     }
 }
