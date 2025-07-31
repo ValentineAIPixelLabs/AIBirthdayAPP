@@ -458,8 +458,23 @@ struct ContactCongratsView: View {
     }
 
     private func generateCreativePrompt() {
-        // Заглушка: автогенерация промта по фактам контакта (можно связать с ChatGPTService)
-        prompt = "Поздравительный промт на основе информации о \(contact.name)..."
+        let apiKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
+        guard !apiKey.isEmpty else {
+            alertMessage = "Не найден API-ключ для генерации промта."
+            return
+        }
+        isLoading = true
+        ChatGPTService.shared.generateCreativePrompt(for: contact, apiKey: apiKey) { result in
+            DispatchQueue.main.async {
+                isLoading = false
+                switch result {
+                case .success(let creativePrompt):
+                    prompt = creativePrompt
+                case .failure(let error):
+                    alertMessage = "Ошибка генерации промта: \(error.localizedDescription)"
+                }
+            }
+        }
     }
 
 
