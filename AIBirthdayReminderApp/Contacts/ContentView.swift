@@ -130,12 +130,20 @@ struct ContentView: View {
         return !hasShown
     }()
     @State private var path = NavigationPath()
-    @State private var showSearchContacts: Bool = false
     @State private var searchText: String = ""
     @State private var contactForCongrats: Contact?
 
     private var filteredContacts: [Contact] {
-        chipFilter.filter(contacts: vm.sortedContacts)
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let base = chipFilter.filter(contacts: vm.sortedContacts)
+        if query.isEmpty {
+            return base
+        }
+        return base.filter {
+            $0.name.lowercased().contains(query) ||
+            ($0.surname?.lowercased().contains(query) ?? false) ||
+            ($0.nickname?.lowercased().contains(query) ?? false)
+        }
     }
 
     private var sectionedContacts: [SectionedContacts] {
@@ -162,7 +170,8 @@ struct ContentView: View {
                         filteredContacts: contactsList,
                         sectionedContacts: contactsSections,
                         handleImportedContact: handleImportedContact,
-                        contactForCongrats: $contactForCongrats
+                        contactForCongrats: $contactForCongrats,
+                        searchText: $searchText
                     )
                 }
                 .navigationBarHidden(true)
@@ -214,13 +223,6 @@ struct ContentView: View {
                     SystemContactPickerView { importedCNContact in
                         handleImportedContact(importedCNContact)
                     }
-                }
-                .sheet(isPresented: $showSearchContacts) {
-                    SearchContactsView(
-                        vm: vm,
-                        chipFilter: chipFilter,
-                        onDismiss: { showSearchContacts = false }
-                    )
                 }
             //тут не правильно вызывается редактирование кнотакта:
                 .sheet(isPresented: $vm.isEditingContactPresented, onDismiss: {
@@ -341,26 +343,10 @@ private struct ContactsMainContent: View {
     let sectionedContacts: [SectionedContacts]
     let handleImportedContact: (CNContact) -> Void
     @Binding var contactForCongrats: Contact?
-
-    @State private var isSearchActive: Bool = false
-    @State private var searchText: String = ""
+    @Binding var searchText: String
 
     @State private var isSelectionMode: Bool = false
     @State private var selectedContacts: Set<UUID> = []
-
-    private var filteredContactsWithSearch: [Contact] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let base = vm.sortedContacts.filter {
-            query.isEmpty ? true :
-                $0.name.lowercased().contains(query) ||
-                ($0.surname?.lowercased().contains(query) ?? false) ||
-                ($0.nickname?.lowercased().contains(query) ?? false)
-        }
-        return chipFilter.filter(contacts: base)
-    }
-    private var sectionedContactsWithSearch: [SectionedContacts] {
-        BirthdaySectionsViewModel(contacts: filteredContactsWithSearch).sectionedContacts()
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -393,7 +379,7 @@ private struct ContactsMainContent: View {
                                         Circle()
                                             .fill(Color.red)
                                             .frame(width: 20, height: 20)
-                                        Text("\(filteredContactsWithSearch.count)")
+                                        Text("\(filteredContacts.count)")
                                             .foregroundColor(.white)
                                             .font(.system(size: 12, weight: .bold))
                                     }
@@ -402,22 +388,6 @@ private struct ContactsMainContent: View {
                             },
                             alignment: .topTrailing
                         )
-                    ),
-                    AnyView(
-                        Button(action: {
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                isSearchActive.toggle()
-                            }
-                        }) {
-                            Image(systemName: "magnifyingglass")
-                                .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                                .background(
-                                    Circle().fill(isSearchActive ? AppButtonStyle.Circular.backgroundColor : AppButtonStyle.Circular.backgroundColor)
-                                )
-                                .shadow(color: isSearchActive ? AppButtonStyle.Circular.shadow : AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                                .foregroundColor(isSearchActive ? AppButtonStyle.Circular.iconColor : AppButtonStyle.Circular.iconColor)
-                                .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-                        }
                     ),
                     AnyView(
                         Button(action: { path.append("add") }) {
@@ -434,11 +404,11 @@ private struct ContactsMainContent: View {
 
             if isSelectionMode {
                 HStack(spacing: 20) {
-                    Button(selectedContacts.count == filteredContactsWithSearch.count ? "Снять все" : "Выделить все") {
-                        if selectedContacts.count == filteredContactsWithSearch.count {
+                    Button(selectedContacts.count == filteredContacts.count ? "Снять все" : "Выделить все") {
+                        if selectedContacts.count == filteredContacts.count {
                             selectedContacts.removeAll()
                         } else {
-                            selectedContacts = Set(filteredContactsWithSearch.map { $0.id })
+                            selectedContacts = Set(filteredContacts.map { $0.id })
                         }
                     }
                     .foregroundColor(.accentColor)
@@ -455,26 +425,10 @@ private struct ContactsMainContent: View {
                 .transition(.opacity)
             }
 
-            if isSearchActive {
-                HStack(spacing: 8) {
-                    AppSearchBar(text: $searchText)
-                    Button("Отмена") {
-                        withAnimation(AppButtonStyle.SearchBar.animation) {
-                            isSearchActive = false
-                        }
-                        searchText = ""
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                    }
-                    .foregroundColor(.accentColor)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                    .animation(AppButtonStyle.SearchBar.animation, value: isSearchActive)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 0)
-                .frame(height: 44)
-                .transition(.move(edge: .top).combined(with: .opacity))
+            VStack(spacing: 0) {
+                // Строка поиска всегда видна
             }
+            .appSearchable(text: $searchText)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: AppButtonStyle.FilterChip.spacing) {
@@ -509,12 +463,11 @@ private struct ContactsMainContent: View {
                 .padding(.bottom, AppHeaderStyle.filterChipsBottomPadding)
                 .padding(.top, AppHeaderStyle.filterChipsTopPadding)
             }
-            //.background(AppButtonStyle.FilterChip.backgroundMaterial)
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
                     ForEach(
-                        isSearchActive ? sectionedContactsWithSearch : sectionedContacts,
+                        sectionedContacts,
                         id: \.section
                     ) { section in
                         VStack(alignment: .leading, spacing: 8) {
@@ -562,83 +515,9 @@ private struct ContactsMainContent: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: isSelectionMode)
-        .animation(.easeInOut(duration: 0.25), value: isSearchActive)
     }
 }
 
-private struct SearchContactsView: View {
-    @ObservedObject var vm: ContactsViewModel
-    @ObservedObject var chipFilter: ChipRelationFilter
-    var onDismiss: () -> Void
-    @State private var searchText: String = ""
-
-    private var filteredContacts: [Contact] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let base = vm.sortedContacts.filter {
-            query.isEmpty ? true :
-                $0.name.lowercased().contains(query) ||
-                ($0.surname?.lowercased().contains(query) ?? false) ||
-                ($0.nickname?.lowercased().contains(query) ?? false)
-        }
-        return chipFilter.filter(contacts: base)
-    }
-
-    private var sectionedContacts: [SectionedContacts] {
-        BirthdaySectionsViewModel(contacts: filteredContacts).sectionedContacts()
-    }
-
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                HStack {
-                    AppSearchBar(text: $searchText)
-                    Button("Отмена") {
-                        onDismiss()
-                        searchText = ""
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                    }
-                    .foregroundColor(.accentColor)
-                }
-                .padding(10)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .animation(AppButtonStyle.SearchBar.animation, value: searchText)
-
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 18) {
-                        ForEach(sectionedContacts, id: \.section) { section in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(BirthdaySectionsViewModel(contacts: []).sectionTitle(section.section))
-                                    .font(.callout).bold()
-                                    .foregroundColor(.secondary)
-                                    .padding(.horizontal, 20)
-                                    .padding(.top, AppHeaderStyle.monthLabelTopPadding)
-                                ForEach(section.contacts) { contact in
-                                    if let index = vm.contacts.firstIndex(where: { $0.id == contact.id }) {
-                                        NavigationLink(destination: ContactDetailView(vm: vm, contactId: contact.id)) {
-                                            ContactCardView(
-                                                contact: $vm.contacts[index],
-                                                path: .constant(NavigationPath()),
-                                                contactForCongrats: .constant(nil)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(.top, 10)
-                    .padding(.bottom, 40)
-                }
-            }
-            .navigationBarHidden(true)
-            .background(
-                AppBackground()
-            )
-        }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-        .animation(.easeInOut(duration: 0.33), value: searchText)
-    }
-}
 
 extension ContactsViewModel {
     func deleteContacts(with ids: Set<UUID>) {

@@ -24,6 +24,8 @@ struct CardStyle {
     static let backgroundColor = Color.white.opacity(0.38)
     static let shadowColor = Color.black.opacity(shadowOpacity)
     static let borderColor = Color.gray.opacity(0.15)
+    static let material: Material = .ultraThinMaterial
+    static let translucentBackground = Color.white.opacity(0.16)
     
     // Отступы между карточками в списке
     static let cardSpacing: CGFloat = 12

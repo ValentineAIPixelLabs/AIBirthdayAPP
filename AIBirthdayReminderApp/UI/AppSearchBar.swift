@@ -8,38 +8,19 @@
 
 import SwiftUI
 
-struct AppSearchBar: View {
+struct AppSearchable: ViewModifier {
     @Binding var text: String
-    var placeholder: String = "Поиск"
-    var onCommit: (() -> Void)? = nil
+    var prompt: String = "Поиск"
+    var placement: SearchFieldPlacement = .automatic
 
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(AppButtonStyle.SearchBar.iconColor)
-            TextField(placeholder, text: $text, onCommit: {
-                onCommit?()
-            })
-            .font(AppButtonStyle.SearchBar.font)
-            .foregroundColor(AppButtonStyle.SearchBar.textColor)
-            .autocapitalization(.none)
-            .disableAutocorrection(true)
+    func body(content: Content) -> some View {
+        content
+            .searchable(text: $text, placement: placement, prompt: prompt)
+    }
+}
 
-            if !text.isEmpty {
-                Button(action: { text = "" }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(AppButtonStyle.SearchBar.iconColor)
-                        .font(.system(size: 18, weight: .regular))
-                }
-            }
-        }
-        .padding(.vertical, AppButtonStyle.SearchBar.verticalPadding)
-        .padding(.horizontal, AppButtonStyle.SearchBar.horizontalPadding)
-        .background(
-            RoundedRectangle(cornerRadius: AppButtonStyle.SearchBar.cornerRadius, style: .continuous)
-                .fill(AppButtonStyle.SearchBar.background)
-                .shadow(color: AppButtonStyle.SearchBar.shadow, radius: AppButtonStyle.SearchBar.shadowRadius)
-        )
-        .animation(AppButtonStyle.SearchBar.animation, value: text)
+extension View {
+    func appSearchable(text: Binding<String>, prompt: String = "Поиск", placement: SearchFieldPlacement = .automatic) -> some View {
+        self.modifier(AppSearchable(text: text, prompt: prompt, placement: placement))
     }
 }

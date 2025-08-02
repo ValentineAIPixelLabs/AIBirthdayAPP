@@ -1,7 +1,4 @@
 import SwiftUI
-//import AppHeaderStyle
-//import AppSearchBar
-//import ButtonStyle
 
 enum HolidaySortMode: String, CaseIterable, Identifiable {
     case date = "По дате"
@@ -51,7 +48,6 @@ private struct HolidayContent: View {
         let calendarImporter: HolidayCalendarImporter
         
         @State private var searchText: String = ""
-        @State private var isSearchActive: Bool = false
         @State private var selectedFilter: String = "Все праздники"
         @State private var holidayToEdit: Holiday? = nil
         @State private var selectedHolidayForCongrats: Holiday? = nil
@@ -102,6 +98,25 @@ private struct HolidayContent: View {
                 }
             }
         }
+
+        // MARK: - Months sorting/grouping helpers
+        private var sortedMonths: [Int] {
+            let now = Date()
+            let calendar = Calendar.current
+            let currentMonth = calendar.component(.month, from: now)
+            let monthsWithHolidays = Set(filteredVisibleHolidays.map { calendar.component(.month, from: $0.date) }).sorted()
+            var result: [Int] = []
+            if let startMonth = monthsWithHolidays.first(where: { $0 >= currentMonth }) ?? monthsWithHolidays.first {
+                result.append(contentsOf: monthsWithHolidays.filter { $0 >= startMonth })
+                result.append(contentsOf: monthsWithHolidays.filter { $0 < startMonth })
+            }
+            return result
+        }
+
+        private var monthsDict: [Int: [Holiday]] {
+            let calendar = Calendar.current
+            return Dictionary(grouping: filteredVisibleHolidays) { calendar.component(.month, from: $0.date) }
+        }
         
         func colorForType(_ type: HolidayType) -> Color {
             switch type {
@@ -126,12 +141,184 @@ private struct HolidayContent: View {
 
         var body: some View {
             VStack(spacing: 0) {
-                topBar
-                searchBar
-                filterChips
-                holidaysLists
+                List {
+                    // Фильтры как первая секция/элемент
+                    Section {
+                        filterChips
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                    }
+                    .listRowBackground(Color.clear)
+
+                    // Список видимых праздников по месяцам
+                    let monthSymbols = DateFormatter().standaloneMonthSymbols ?? []
+                    if !filteredVisibleHolidays.isEmpty {
+                        ForEach(sortedMonths, id: \.self) { month in
+                            if let holidays = monthsDict[month], !holidays.isEmpty {
+                                Section(header:
+                                    Text(monthSymbols.indices.contains(month-1) ? monthSymbols[month-1].capitalized : "Месяц")
+                                        .font(.callout).bold()
+                                        .foregroundColor(.secondary)
+                                        .padding(.top, AppHeaderStyle.monthLabelTopPadding)
+                                        .padding(.leading, 20)
+                                ) {
+                                    ForEach(holidays.sorted(by: { $0.date < $1.date }), id: \.id) { holiday in
+                                        holidayRow(holiday: holiday)
+                                            .listRowInsets(EdgeInsets())
+                                            .listRowSeparator(.hidden)
+                                            .listRowBackground(Color.clear)
+                                            .padding(.bottom, 14)
+                                    }
+                                }
+                                .listRowBackground(Color.clear)
+                            }
+                        }
+                    }
+
+                    // Кнопка показа скрытых праздников
+                    if !filteredHiddenHolidays.isEmpty {
+                        Section {
+                            Button(action: {
+                                withAnimation(.easeInOut(duration: 0.22)) {
+                                    showHiddenSection.toggle()
+                                    if showHiddenSection {
+                                        isRestoreMode = true
+                                        selectedHiddenHolidays.removeAll()
+                                    } else {
+                                        isRestoreMode = false
+                                        selectedHiddenHolidays.removeAll()
+                                    }
+                                }
+                            }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: showHiddenSection ? "eye.slash" : "eye")
+                                        .font(.system(size: 19, weight: .semibold))
+                                    Text(showHiddenSection ? "Скрыть" : "Отобразить скрытые праздники")
+                                        .font(.system(size: 16, weight: .semibold))
+                                }
+                                .foregroundColor(.primary)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .clipShape(Capsule())
+                                .shadow(color: Color.black.opacity(0.06), radius: 2, y: 1)
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                        }
+                        .listRowBackground(Color.clear)
+                    }
+
+                    // Скрытые праздники
+                    if showHiddenSection {
+                        Section(header: EmptyView()) {
+                            if filteredHiddenHolidays.isEmpty {
+                                Text("Нет скрытых праздников")
+                                    .font(.footnote)
+                                    .foregroundColor(.secondary)
+                                    .padding(.top, 8)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                    .listRowInsets(EdgeInsets())
+                                    .listRowSeparator(.hidden)
+                            } else {
+                                ForEach(filteredHiddenHolidays, id: \.id) { holiday in
+                                    HStack(alignment: .center, spacing: 0) {
+                                        if isRestoreMode {
+                                            Button(action: {
+                                                if selectedHiddenHolidays.contains(holiday.id) {
+                                                    selectedHiddenHolidays.remove(holiday.id)
+                                                } else {
+                                                    selectedHiddenHolidays.insert(holiday.id)
+                                                }
+                                            }) {
+                                                Image(systemName: selectedHiddenHolidays.contains(holiday.id) ? "eye.circle.fill" : "eye.circle")
+                                                    .foregroundColor(selectedHiddenHolidays.contains(holiday.id) ? .accentColor : .secondary)
+                                                    .font(.system(size: 28))
+                                                    .padding(.trailing, 8)
+                                            }
+                                            .buttonStyle(PlainButtonStyle())
+                                        }
+                                        HolidayCardView(
+                                            holiday: holiday,
+                                            viewModel: viewModel,
+                                            selectedHoliday: $selectedHoliday,
+                                            selectedHolidayForCongrats: $selectedHolidayForCongrats,
+                                            showCongratsSheet: $showCongratsSheet,
+                                            holidayForCongratsSheet: $holidayForCongratsSheet,
+                                            isHidden: true,
+                                            onEdit: { holiday in
+                                                holidayToEdit = holiday
+                                            }
+                                        )
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .listRowInsets(EdgeInsets())
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
+                                }
+                            }
+                        }
+                        .listRowBackground(Color.clear)
+                    }
+
+                    // Сообщение, если нет ни видимых, ни скрытых праздников
+                    if filteredVisibleHolidays.isEmpty && filteredHiddenHolidays.isEmpty {
+                        Section {
+                            VStack {
+                                Spacer()
+                                Image(systemName: "calendar.badge.clock")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 64, height: 64)
+                                    .foregroundColor(.secondary)
+                                    .padding(.bottom, 12)
+                                Text("Праздники скоро появятся")
+                                    .font(.headline)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity)
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                        }
+                        .listRowBackground(Color.clear)
+                    }
+                }
+                .listStyle(.plain)
+                .appSearchable(text: $searchText)
+                if isSelectionMode {
+                    selectionBottomBar
+                }
+                if showHiddenSection && isRestoreMode {
+                    restoreBottomBar
+                }
             }
-            .frame(maxWidth: .infinity)
+            .overlay(
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            showAddMenu = true
+                        }) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 56, height: 56)
+                                .background(
+                                    Color(red: 0.0, green: 0.478, blue: 1.0)
+                                )
+                                .clipShape(Circle())
+                                .shadow(color: Color.black.opacity(0.13), radius: 8, x: 0, y: 4)
+                        }
+                        .padding(.bottom, (isSelectionMode || (showHiddenSection && isRestoreMode)) ? 100 : 30)
+                        .padding(.trailing, 18)
+                        .animation(.easeInOut(duration: 0.28), value: isSelectionMode || (showHiddenSection && isRestoreMode))
+                    }
+                }
+            )
             .alert("Ошибка", isPresented: Binding(
                 get: { calendarImportError != nil },
                 set: { _ in calendarImportError = nil }
@@ -217,91 +404,9 @@ private struct HolidayContent: View {
             }
         }
 
-        private var topBar: some View {
-            AppTopBar(
-                title: "",
-                leftButtons: [],
-                rightButtons: [
-                    AnyView(
-                        Button(action: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                // Закрываем секцию скрытых праздников и restore-режим при активации массового выбора
-                                if showHiddenSection {
-                                    showHiddenSection = false
-                                    isRestoreMode = false
-                                    selectedHiddenHolidays.removeAll()
-                                }
-                                isSelectionMode.toggle()
-                                if !isSelectionMode {
-                                    selectedHolidays.removeAll()
-                                }
-                            }
-                        }) {
-                            Image(systemName: isSelectionMode ? "xmark" : "eye.slash")
-                        }
-                        .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                        .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                        .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                        .foregroundColor(AppButtonStyle.Circular.iconColor)
-                        .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-                        .accessibilityLabel(isSelectionMode ? "Выйти из режима выбора" : "Выбрать праздники")
-                    ),
-                    AnyView(
-                        Button(action: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                isSearchActive.toggle()
-                                if !isSearchActive {
-                                    searchText = ""
-                                }
-                            }
-                        }) {
-                            Image(systemName: "magnifyingglass")
-                        }
-                        .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                        .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                        .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                        .foregroundColor(AppButtonStyle.Circular.iconColor)
-                        .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-                        .accessibilityLabel("Поиск")
-                    ),
-                    AnyView(
-                        Button(action: {
-                            showAddMenu = true
-                        }) {
-                            Image(systemName: "plus")
-                        }
-                        .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                        .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                        .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                        .foregroundColor(AppButtonStyle.Circular.iconColor)
-                        .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-                        .accessibilityLabel("Добавить праздник")
-                    )
-                ]
-            )
-        }
 
-        private var searchBar: some View {
-            Group {
-                if isSearchActive {
-                    HStack {
-                        AppSearchBar(text: $searchText)
-                        Button(action: {
-                            withAnimation(AppButtonStyle.SearchBar.animation) {
-                                isSearchActive = false
-                                searchText = ""
-                            }
-                        }) {
-                            Text("Отмена")
-                                .foregroundColor(.accentColor)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                }
-            }
-        }
+
+        // searchBar удалён — больше не нужен, поиск теперь через .appSearchable
 
         private var filterChips: some View {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -332,162 +437,7 @@ private struct HolidayContent: View {
             }
         }
 
-        private var holidaysLists: some View {
-            // Новый способ группировки и сортировки месяцев (по текущему, следующему и далее)
-            let now = Date()
-            let calendar = Calendar.current
-            let currentMonth = calendar.component(.month, from: now)
-            let monthsWithHolidays = Set(filteredVisibleHolidays.map { calendar.component(.month, from: $0.date) }).sorted()
-
-            var sortedMonths: [Int] = []
-            if let startMonth = monthsWithHolidays.first(where: { $0 >= currentMonth }) ?? monthsWithHolidays.first {
-                sortedMonths.append(contentsOf: monthsWithHolidays.filter { $0 >= startMonth })
-                sortedMonths.append(contentsOf: monthsWithHolidays.filter { $0 < startMonth })
-            }
-
-            let monthsDict = Dictionary(grouping: filteredVisibleHolidays) { calendar.component(.month, from: $0.date) }
-            let monthSymbols = DateFormatter().standaloneMonthSymbols ?? []
-
-            return Group {
-                ZStack(alignment: .bottom) {
-                    ScrollViewReader { scrollProxy in
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 18) {
-                                // Список видимых праздников, если есть
-                                if !filteredVisibleHolidays.isEmpty {
-                                    ForEach(sortedMonths, id: \.self) { month in
-                                        if let holidays = monthsDict[month], !holidays.isEmpty {
-                                            VStack(alignment: .leading, spacing: 8) {
-                                                Text(monthSymbols.indices.contains(month-1) ? monthSymbols[month-1].capitalized : "Месяц")
-                                                    .font(.callout).bold()
-                                                    .foregroundColor(.secondary)
-                                                    .padding(.top, AppHeaderStyle.monthLabelTopPadding)
-                                                    .padding(.leading, 20)
-                                                ForEach(holidays.sorted(by: { $0.date < $1.date }), id: \.id) { holiday in
-                                                    holidayRow(holiday: holiday)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                // Кнопка показа скрытых праздников: показывать всегда, если есть скрытые праздники
-                                if !filteredHiddenHolidays.isEmpty {
-                                    Button(action: {
-                                        withAnimation(.easeInOut(duration: 0.22)) {
-                                            showHiddenSection.toggle()
-                                            if showHiddenSection {
-                                                isRestoreMode = true
-                                                selectedHiddenHolidays.removeAll()
-                                            } else {
-                                                isRestoreMode = false
-                                                selectedHiddenHolidays.removeAll()
-                                            }
-                                        }
-                                        if showHiddenSection {
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                                                withAnimation {
-                                                    scrollProxy.scrollTo("hiddenHolidaysSection", anchor: .top)
-                                                }
-                                            }
-                                        }
-                                    }) {
-                                        HStack(spacing: 8) {
-                                            Image(systemName: showHiddenSection ? "eye.slash" : "eye")
-                                                .font(.system(size: 19, weight: .semibold))
-                                            Text(showHiddenSection ? "Скрыть" : "Отобразить скрытые праздники")
-                                                .font(.system(size: 16, weight: .semibold))
-                                        }
-                                        .foregroundColor(.primary)
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 8)
-                                        .clipShape(Capsule())
-                                        .shadow(color: Color.black.opacity(0.06), radius: 2, y: 1)
-                                        .frame(maxWidth: .infinity)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .padding(.vertical, 10)
-                                }
-                                // Скрытые праздники
-                                if showHiddenSection {
-                                    Group {
-                                        EmptyView()
-                                    }
-                                    .id("hiddenHolidaysSection")
-                                    // Кнопка "Вернуть праздники" удалена, restore-режим теперь только через основную кнопку
-                                    if filteredHiddenHolidays.isEmpty {
-                                        Text("Нет скрытых праздников")
-                                            .font(.footnote)
-                                            .foregroundColor(.secondary)
-                                            .padding(.top, 8)
-                                            .frame(maxWidth: .infinity, alignment: .center)
-                                    } else {
-                                        ForEach(filteredHiddenHolidays, id: \.id) { holiday in
-                                            HStack(alignment: .center, spacing: 0) {
-                                                if isRestoreMode {
-                                                    Button(action: {
-                                                        if selectedHiddenHolidays.contains(holiday.id) {
-                                                            selectedHiddenHolidays.remove(holiday.id)
-                                                        } else {
-                                                            selectedHiddenHolidays.insert(holiday.id)
-                                                        }
-                                                    }) {
-                                                        Image(systemName: selectedHiddenHolidays.contains(holiday.id) ? "eye.circle.fill" : "eye.circle")
-                                                            .foregroundColor(selectedHiddenHolidays.contains(holiday.id) ? .accentColor : .secondary)
-                                                            .font(.system(size: 28))
-                                                            .padding(.trailing, 8)
-                                                    }
-                                                    .buttonStyle(PlainButtonStyle())
-                                                }
-                                                HolidayCardView(
-                                                    holiday: holiday,
-                                                    viewModel: viewModel,
-                                                    selectedHoliday: $selectedHoliday,
-                                                    selectedHolidayForCongrats: $selectedHolidayForCongrats,
-                                                    showCongratsSheet: $showCongratsSheet,
-                                                    holidayForCongratsSheet: $holidayForCongratsSheet,
-                                                    isHidden: true,
-                                                    onEdit: { holiday in
-                                                        holidayToEdit = holiday
-                                                    }
-                                                )
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                            }
-                                            .padding(.horizontal, 20)
-                                        }
-                                    }
-                                }
-                                // Сообщение, если нет ни видимых, ни скрытых праздников
-                                if filteredVisibleHolidays.isEmpty && filteredHiddenHolidays.isEmpty {
-                                    VStack {
-                                        Spacer()
-                                        Image(systemName: "calendar.badge.clock")
-                                            .resizable()
-                                            .scaledToFit()
-                                            .frame(width: 64, height: 64)
-                                            .foregroundColor(.secondary)
-                                            .padding(.bottom, 12)
-                                        Text("Праздники скоро появятся")
-                                            .font(.headline)
-                                            .foregroundColor(.secondary)
-                                        Spacer()
-                                    }
-                                }
-                            }
-                            .padding(.top, AppHeaderStyle.listTopPaddingAfterChips)
-                            .padding(.bottom, 110)
-                        }
-                        .id(viewModel.holidays.count)
-                    }
-                    if isSelectionMode {
-                        selectionBottomBar
-                    }
-                    // Показывать restoreBottomBar только если открыта секция скрытых и активен режим восстановления
-                    if showHiddenSection && isRestoreMode {
-                        restoreBottomBar
-                    }
-                }
-            }
-        }
+        // holidaysLists больше не нужен, логика перенесена в body
 
         // monthSection больше не нужен, секции строятся через groupedHolidays
 
@@ -533,15 +483,65 @@ private struct HolidayContent: View {
                     }
                 }
             }
+            .scaleEffect(isSelectionMode && selectedHolidays.contains(holiday.id) ? 0.97 : 1.0)
+            .animation(.easeInOut(duration: 0.17), value: isSelectionMode)
+            .onLongPressGesture(minimumDuration: 0.38) {
+                // Виброотклик
+                let generator = UIImpactFeedbackGenerator(style: .medium)
+                generator.impactOccurred()
+                // Включить режим выбора и выделить карточку
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    isSelectionMode = true
+                    selectedHolidays.insert(holiday.id)
+                }
+            }
             .padding(.horizontal, 20)
+            .listRowBackground(Color.clear)
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                if viewModel.isHolidayHidden(holiday) {
+                    Button {
+                        viewModel.unhideHoliday(holiday)
+                    } label: {
+                        Label("Показать", systemImage: "eye")
+                    }
+                    .tint(.green)
+                } else {
+                    Button {
+                        viewModel.hideHoliday(holiday)
+                    } label: {
+                        Label("Скрыть", systemImage: "eye.slash")
+                    }
+                    .tint(.orange)
+                }
+            }
         }
 
         private var selectionBottomBar: some View {
             VStack(spacing: 10) {
                 Divider()
-                HStack(spacing: 16) {
+                HStack(spacing: 12) {
+                    // "Отмена"
                     Button(action: {
-                        // Скрыть выбранные
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isSelectionMode = false
+                            selectedHolidays.removeAll()
+                        }
+                    }) {
+                        Text("Отмена")
+                            .font(.system(size: 16, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 40)
+                            .padding(.horizontal, 8)
+                            .foregroundColor(.accentColor)
+                            .background(
+                                Capsule().fill(Color.accentColor.opacity(0.13))
+                            )
+                    }
+
+                    // "Скрыть выбранные"
+                    Button(action: {
                         for id in selectedHolidays {
                             if let holiday = viewModel.holidays.first(where: { $0.id == id }) {
                                 viewModel.hideHoliday(holiday)
@@ -553,12 +553,12 @@ private struct HolidayContent: View {
                         }
                     }) {
                         Text("Скрыть выбранные")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.88)
+                            .minimumScaleFactor(0.7)
                             .truncationMode(.tail)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 40)
+                            .padding(.horizontal, 8)
                             .foregroundColor(selectedHolidays.isEmpty ? .gray : .white)
                             .background(
                                 Capsule().fill(selectedHolidays.isEmpty ? Color.gray.opacity(0.13) : Color.accentColor)
@@ -566,6 +566,7 @@ private struct HolidayContent: View {
                     }
                     .disabled(selectedHolidays.isEmpty)
 
+                    // "Выделить все"/"Снять все"
                     Button(action: {
                         let visibleIds = Set(filteredVisibleHolidays.map { $0.id })
                         if selectedHolidays.intersection(visibleIds).count == visibleIds.count && !visibleIds.isEmpty {
@@ -579,19 +580,19 @@ private struct HolidayContent: View {
                         let visibleIds = Set(filteredVisibleHolidays.map { $0.id })
                         let isAllSelected = selectedHolidays.intersection(visibleIds).count == visibleIds.count && !visibleIds.isEmpty
                         Text(isAllSelected ? "Снять все" : "Выделить все")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.88)
+                            .minimumScaleFactor(0.7)
                             .truncationMode(.tail)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 40)
+                            .padding(.horizontal, 8)
                             .foregroundColor(.accentColor)
                             .background(
                                 Capsule().fill(Color.accentColor.opacity(0.13))
                             )
                     }
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(.ultraThinMaterial)
             }
@@ -726,7 +727,7 @@ private struct HolidayCardView: View {
         }
         .background(
             RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                .fill(CardStyle.backgroundColor)
+                .fill(CardStyle.material)
                 .shadow(color: CardStyle.shadowColor, radius: CardStyle.shadowRadius, y: CardStyle.shadowYOffset)
                 .overlay(
                     RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
@@ -748,3 +749,4 @@ private struct HolidayCardView: View {
     }
     
 }
+
