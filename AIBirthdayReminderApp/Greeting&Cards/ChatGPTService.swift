@@ -10,7 +10,8 @@ final class ChatGPTService {
 
     // MARK: - Генерация поздравления
 
-    func generateGreeting(for contact: Contact, apiKey: String, completion: @escaping (Result<String, Error>) -> Void) {
+    func generateGreeting(for contact: Contact, appleId: String, completion: @escaping (Result<String, Error>) -> Void) {
+        // 1. Формируем prompt как раньше
         var ageString = ""
         let calendar = Calendar.current
         let currentYear = calendar.component(.year, from: Date())
@@ -45,30 +46,26 @@ final class ChatGPTService {
         promptLines.append("Поздравление должно быть завершённым и не обрываться на середине. Если токены заканчиваются, закончи мысль максимально кратко.")
 
         let prompt = promptLines.joined(separator: "\n")
-        let messages: [[String: String]] = [
-            ["role": "system", "content": "Ты — дружелюбный и оригинальный автор поздравлений на русском языке. Всегда отвечай полным законченным текстом. Не обрывай поздравление на середине, даже если не хватает токенов — постарайся завершить мысль или закончить поздравление кратко."],
-            ["role": "user", "content": prompt]
-        ]
-        guard let url = URL(string: endpoint) else {
+        
+        // 2. Готовим запрос к своему серверу
+        guard let url = URL(string: "https://aibirthday-backend.up.railway.app/api/generate") else {
             completion(.failure(NSError(domain: "Invalid URL", code: -1)))
             return
         }
         var request = URLRequest(url: url)
-        request.timeoutInterval = 240
         request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body: [String: Any] = [
-            "model": model,
-            "messages": messages,
-            "max_tokens": 600,
-            "temperature": 0.8
+            "apple_id": appleId,
+            "prompt": prompt,
+            "type": "birthday"
         ]
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         } catch {
             completion(.failure(error)); return
         }
+        
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error { completion(.failure(error)); return }
             guard let data = data else {
@@ -76,14 +73,12 @@ final class ChatGPTService {
             }
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let choices = json["choices"] as? [[String: Any]],
-                   let message = choices.first?["message"] as? [String: Any],
-                   let content = message["content"] as? String {
-                    completion(.success(content.trimmingCharacters(in: .whitespacesAndNewlines)))
+                   let success = json["success"] as? Bool, success,
+                   let result = json["result"] as? String {
+                    completion(.success(result.trimmingCharacters(in: .whitespacesAndNewlines)))
                 } else if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let error = json["error"] as? [String: Any],
-                          let message = error["message"] as? String {
-                    completion(.failure(NSError(domain: message, code: -2)))
+                          let errorMsg = json["error"] as? String {
+                    completion(.failure(NSError(domain: errorMsg, code: -2)))
                 } else {
                     completion(.failure(NSError(domain: "Unexpected response", code: -3)))
                 }

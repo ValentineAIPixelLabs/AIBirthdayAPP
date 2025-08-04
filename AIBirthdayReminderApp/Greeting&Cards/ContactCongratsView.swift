@@ -309,7 +309,7 @@ struct ContactCongratsView: View {
                 Button(action: {
                     isLoading = true
                     let apiKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
-                    ChatGPTService.shared.generateGreeting(for: contact, apiKey: apiKey) { result in
+                    ChatGPTService.shared.generateGreeting(for: contact, appleId: appleId) { result in
                         DispatchQueue.main.async {
                             isLoading = false
                             switch result {
