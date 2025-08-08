@@ -1,10 +1,3 @@
-//
-//  AIBirthdayReminderAppApp.swift
-//  AIBirthdayReminderApp
-//
-//  Created by Валентин Станков on 11.06.2025.
-//
-
 import SwiftUI
 import UIKit
 
@@ -26,8 +19,44 @@ struct AIBirthdayReminderAppApp: App {
 
     var body: some Scene {
         WindowGroup {
-            AppTabView()
+            RootView()
                 .environmentObject(HolidaysViewModel())
         }
+    }
+}
+
+struct RootView: View {
+    @State private var isSignedIn = AppleSignInManager.shared.currentAppleId != nil
+
+    var body: some View {
+        if isSignedIn {
+            AppTabView()
+        } else {
+            SignInView(isSignedIn: $isSignedIn)
+        }
+    }
+}
+
+struct SignInView: View {
+    @Binding var isSignedIn: Bool
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Пожалуйста, войдите через Apple")
+                .font(.title2)
+            Button(action: {
+                AppleSignInManager.shared.startSignIn()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    isSignedIn = AppleSignInManager.shared.currentAppleId != nil
+                }
+            }) {
+                Text("Войти через Apple")
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(Color.black)
+                    .cornerRadius(8)
+            }
+        }
+        .padding()
     }
 }

@@ -13,13 +13,7 @@ struct ActivityViewController: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-// MARK: - Congrats Style Enum
-enum CongratsStyle: String, CaseIterable, Identifiable {
-    case classic = "Классика"
-    case funny = "Смешное"
-    case poetic = "Поэтичное"
-    var id: String { rawValue }
-}
+
 
 // MARK: - ScrollOffsetPreferenceKey
 struct ScrollOffsetPreferenceKey: PreferenceKey {
@@ -38,7 +32,6 @@ struct ContactCongratsView: View {
     @Binding var contact: Contact
     @State private var cardHistory: [CardHistoryItemWithImage] = []
     @State private var congratsHistory: [CongratsHistoryItem] = []
-    @State private var selectedStyle: CongratsStyle = .classic
     @State private var isLoading: Bool = false
     @State private var alertMessage: String? = nil
     @State private var headerVisible: Bool = true
@@ -307,9 +300,9 @@ struct ContactCongratsView: View {
         HStack(spacing: 16) {
             if selectedMode == "text" {
                 Button(action: {
+                    // JWT авторизация: appleId больше не нужен.
                     isLoading = true
-                    let apiKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
-                    ChatGPTService.shared.generateGreeting(for: contact, appleId: appleId) { result in
+                    ChatGPTService.shared.generateGreeting(for: contact) { result in
                         DispatchQueue.main.async {
                             isLoading = false
                             switch result {
@@ -408,17 +401,11 @@ struct ContactCongratsView: View {
     @State private var selectedQuality: CardQuality = .medium
 
     private func handleGenerate() {
-        // Заглушка: логика передачи referenceImage, prompt, selectedCardStyle, selectedAspectRatio, selectedQuality
         alertMessage = nil
         guard !isLoading else { return }
-        let apiKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
-        guard !apiKey.isEmpty else {
-            alertMessage = "Нет данных контакта или API-ключа."
-            resetCardGenerationSettings()
-            return
-        }
+        // JWT авторизация: appleId больше не нужен.
+
         loadingType = .image
-        // Start fake progress
         let maxSeconds = 120.0 // 2 минуты
         let tick: Double = 0.6
         fakeProgress = 0
@@ -432,7 +419,7 @@ struct ContactCongratsView: View {
             }
         }
         isLoading = true
-        // Заглушка: можно передать параметры в сервис генерации открыток
+
         ChatGPTService.shared.generateCard(
             for: contact,
             prompt: {
@@ -444,7 +431,6 @@ struct ContactCongratsView: View {
                     return trimmedPrompt
                 }
             }(),
-            apiKey: apiKey,
             quality: {
                 switch selectedQuality {
                     case .low: return "low"
@@ -485,14 +471,10 @@ struct ContactCongratsView: View {
     }
 
     private func generateCreativePrompt() {
-        let apiKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
-        guard !apiKey.isEmpty else {
-            alertMessage = "Не найден API-ключ для генерации промта."
-            return
-        }
+        // JWT авторизация: appleId больше не нужен.
         loadingType = .prompt
         isLoading = true
-        ChatGPTService.shared.generateCreativePrompt(for: contact, apiKey: apiKey) { result in
+        ChatGPTService.shared.generateCreativePrompt(for: contact) { result in
             DispatchQueue.main.async {
                 isLoading = false
                 loadingType = nil
