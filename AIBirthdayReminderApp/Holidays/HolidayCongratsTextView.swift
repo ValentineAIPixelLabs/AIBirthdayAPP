@@ -132,7 +132,7 @@ private func appBundle() -> Bundle {
                                     }
                                 },
                                 onClose: { showCongratsPopup = false },
-                                regenCost: 1
+                                regenCost: store.textGenerationPrice()
                             )
                             .transition(.opacity)
                             if isRegenerating {
@@ -164,7 +164,7 @@ private func appBundle() -> Bundle {
                             Image(systemName: "bolt.fill")
                                 .foregroundColor(.yellow)
                                 .font(.system(size: 15, weight: .semibold))
-                            Text("1")
+                            Text("\(store.textGenerationPrice())")
                                 .font(.system(size: 16, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
                         }

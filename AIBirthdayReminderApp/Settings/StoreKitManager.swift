@@ -1,6 +1,25 @@
 import Foundation
 import StoreKit
 
+// MARK: - Server Pricing Models
+struct ServerPricing {
+    let textGeneration: Int
+    let promptGeneration: Int
+    let imageGeneration: ImageGenerationPricing
+}
+
+struct ImageGenerationPricing {
+    let baseCosts: BaseCosts
+    let referenceImageCost: Int
+    let cardFixed: Int
+}
+
+struct BaseCosts {
+    let low: Int
+    let medium: Int
+    let high: Int
+}
+
 @MainActor
 final class StoreKitManager: ObservableObject {
     @Published var products: [Product] = []
@@ -175,6 +194,9 @@ final class StoreKitManager: ObservableObject {
         } catch {
             // print("GET /api/tokens error: \(error)")
         }
+        
+        // Also fetch pricing when fetching tokens
+        await fetchServerPricing()
     }
 
     /// Подтверждение покупки токенов на сервере (идемпотентно по transaction_id)
@@ -332,6 +354,57 @@ final class StoreKitManager: ObservableObject {
         await fetchSubscriptionStatus()
     }
     
+    // MARK: - Pricing from server
+    @Published var serverPricing: ServerPricing?
+    
+    func fetchServerPricing() async {
+        guard let jwt = currentJWT(),
+              let url = URL(string: "\(baseURL)/api/pricing") else {
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let success = json["success"] as? Bool, success,
+               let pricingData = json["pricing"] as? [String: Any] {
+                
+                let textGeneration = pricingData["text_generation"] as? Int ?? 1
+                let promptGeneration = pricingData["prompt_generation"] as? Int ?? 1
+                
+                var imageGeneration = ImageGenerationPricing(baseCosts: BaseCosts(low: 1, medium: 4, high: 17), referenceImageCost: 1, cardFixed: 4)
+                
+                if let imgData = pricingData["image_generation"] as? [String: Any] {
+                    let baseCosts = imgData["base_costs"] as? [String: Any]
+                    let low = baseCosts?["low"] as? Int ?? 1
+                    let medium = baseCosts?["medium"] as? Int ?? 4
+                    let high = baseCosts?["high"] as? Int ?? 17
+                    let refCost = imgData["reference_image_cost"] as? Int ?? 1
+                    let cardFixed = imgData["card_fixed"] as? Int ?? 4
+                    
+                    imageGeneration = ImageGenerationPricing(
+                        baseCosts: BaseCosts(low: low, medium: medium, high: high),
+                        referenceImageCost: refCost,
+                        cardFixed: cardFixed
+                    )
+                }
+                
+                await MainActor.run {
+                    self.serverPricing = ServerPricing(
+                        textGeneration: textGeneration,
+                        promptGeneration: promptGeneration,
+                        imageGeneration: imageGeneration
+                    )
+                }
+            }
+        } catch {
+            print("Failed to fetch server pricing: \(error)")
+        }
+    }
+    
     // Удобный геттер для UI
     func productDisplayName(_ product: Product) -> String {
         product.displayName
@@ -339,5 +412,68 @@ final class StoreKitManager: ObservableObject {
     
     func productPrice(_ product: Product) -> String {
         product.displayPrice
+    }
+    
+    // MARK: - Token Price Calculations with Server Data
+    func textGenerationPrice() -> Int {
+        return serverPricing?.textGeneration ?? 1
+    }
+    
+    func promptGenerationPrice() -> Int {
+        return serverPricing?.promptGeneration ?? 1
+    }
+    
+    func imageGenerationPrice(quality: String, size: String, hasReferenceImage: Bool = false) -> Int {
+        guard let pricing = serverPricing?.imageGeneration else {
+            // Fallback to local calculation if server pricing not available
+            let base: Int
+            switch quality.lowercased() {
+            case "low": base = 1
+            case "medium": base = 4
+            case "high": base = 17
+            default: base = 4
+            }
+            
+            // Parse size like "1024x1536"
+            let comps = size.split(separator: "x")
+            var multiplier: Double = 1
+            if comps.count == 2, let w = Double(comps[0]), let h = Double(comps[1]) {
+                let area = w * h
+                let tile = 1024.0 * 1024.0
+                let rawMul = area / tile
+                multiplier = max(1, ceil(rawMul * 100) / 100)
+            }
+            var cost = Int(ceil(Double(base) * multiplier))
+            if hasReferenceImage { cost += 1 }
+            return max(1, cost)
+        }
+        
+        // Use server pricing
+        let base: Int
+        switch quality.lowercased() {
+        case "low": base = pricing.baseCosts.low
+        case "medium": base = pricing.baseCosts.medium
+        case "high": base = pricing.baseCosts.high
+        default: base = pricing.baseCosts.medium
+        }
+        
+        // Parse size like "1024x1536"
+        let comps = size.split(separator: "x")
+        var multiplier: Double = 1
+        if comps.count == 2, let w = Double(comps[0]), let h = Double(comps[1]) {
+            let area = w * h
+            let tile = 1024.0 * 1024.0
+            let rawMul = area / tile
+            multiplier = max(1, ceil(rawMul * 100) / 100)
+        }
+        var cost = Int(ceil(Double(base) * multiplier))
+        if hasReferenceImage { 
+            cost += pricing.referenceImageCost 
+        }
+        return max(1, cost)
+    }
+    
+    func cardGenerationPrice() -> Int {
+        return serverPricing?.imageGeneration.cardFixed ?? 4
     }
 }

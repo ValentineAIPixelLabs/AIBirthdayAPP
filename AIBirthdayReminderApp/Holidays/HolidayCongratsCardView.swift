@@ -169,7 +169,7 @@ struct HolidayCongratsCardView: View {
                             Image(systemName: "bolt.fill")
                                 .foregroundColor(.yellow)
                                 .font(.system(size: 15, weight: .semibold))
-                            Text("4")
+                            Text("\(store.cardGenerationPrice())")
                                 .font(.system(size: 16, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
                         }

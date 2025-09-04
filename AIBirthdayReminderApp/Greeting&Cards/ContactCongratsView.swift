@@ -207,7 +207,7 @@ struct ActivityViewController: UIViewControllerRepresentable {
                         onClose: {
                             showCongratsPopup = false
                         },
-                        regenCost: 1
+                        regenCost: store.textGenerationPrice()
                     )
                     .transition(.opacity)
                     if isRegenerating {
@@ -332,7 +332,7 @@ struct ActivityViewController: UIViewControllerRepresentable {
                                 Image(systemName: "bolt.fill")
                                     .foregroundColor(.yellow)
                                     .font(.system(size: 15, weight: .semibold))
-                                Text("1")
+                                Text("\(store.textGenerationPrice())")
                                     .font(.system(size: 16, weight: .bold, design: .rounded))
                                     .foregroundColor(.white)
                             }
@@ -993,31 +993,24 @@ private struct CardGenerationSection: View {
     var onRemoveReferenceImage: () -> Void
     var onGenerateCard: () -> Void
     
+    @EnvironmentObject var store: StoreKitManager
+    
     @State private var showAddMenu = false
 
-    // Dynamic token price for image generation (parity with backend)
+    // Dynamic token price for image generation using server pricing
     private func imageTokenPrice() -> Int {
-        // Base cost per 1024x1024 tile by quality
-        let base: Int
+        let quality: String
         switch selectedQuality {
-        case .low:    base = 1
-        case .medium: base = 4
-        case .high:   base = 17
+        case .low: quality = "low"
+        case .medium: quality = "medium"
+        case .high: quality = "high"
         }
-        // Parse size like "1024x1536"
-        let comps = selectedAspectRatio.apiValue.split(separator: "x")
-        var multiplier: Double = 1
-        if comps.count == 2, let w = Double(comps[0]), let h = Double(comps[1]) {
-            let area = w * h
-            let tile = 1024.0 * 1024.0
-            let rawMul = area / tile
-            // round up to hundredths, minimum 1
-            multiplier = max(1, ceil(rawMul * 100) / 100)
-        }
-        var cost = Int(ceil(Double(base) * multiplier))
-        // +1 token if reference image is supplied
-        if referenceImage != nil { cost += 1 }
-        return max(1, cost)
+        
+        return store.imageGenerationPrice(
+            quality: quality,
+            size: selectedAspectRatio.apiValue,
+            hasReferenceImage: referenceImage != nil
+        )
     }
 
     var body: some View {
@@ -1176,6 +1169,8 @@ private struct PromptComposerBar: View {
     var charLimit: Int
     var onAddTapped: () -> Void
     var onIdeaTapped: () -> Void
+    
+    @EnvironmentObject var store: StoreKitManager
 
     private let fieldHeight: CGFloat = 120 // +~1 строка к прежним ~90
     private let cornerRadius: CGFloat = 20
@@ -1222,7 +1217,7 @@ private struct PromptComposerBar: View {
                             Image(systemName: "bolt.fill")
                                 .foregroundColor(.yellow)
                                 .font(.system(size: 13, weight: .semibold))
-                            Text("1")
+                            Text("\(store.promptGenerationPrice())")
                                 .font(.footnote.weight(.bold))
                         }
                         .padding(.horizontal, 8)
