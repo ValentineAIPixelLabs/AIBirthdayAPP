@@ -1,15 +1,42 @@
-//
-//  HolidayDetailView.swift
-//  AIBirthdayReminderApp
-//
-//  Created by Александр Дротенко on 25.06.2025.
-//
-
 import SwiftUI
-//import ButtonStyle
-//import CardStyle
 
-struct HolidayDetailView: View {
+// MARK: - Localization helpers (file-local)
+private func appLocale() -> Locale {
+    if let code = UserDefaults.standard.string(forKey: "app.language.code") { return Locale(identifier: code) }
+    if let code = Bundle.main.preferredLocalizations.first { return Locale(identifier: code) }
+    return .current
+}
+private func appBundle() -> Bundle {
+    if let code = UserDefaults.standard.string(forKey: "app.language.code"),
+       let path = Bundle.main.path(forResource: code, ofType: "lproj"),
+       let bundle = Bundle(path: path) { return bundle }
+    return .main
+}
+private func localizedDate(_ date: Date) -> String {
+    let df = DateFormatter()
+    df.locale = appLocale()
+    df.setLocalizedDateFormatFromTemplate("d MMMM y")
+    return df.string(from: date)
+}
+
+private func formattedHolidayDate(_ holiday: Holiday) -> String {
+    let calendar = Calendar.current
+    var comps = calendar.dateComponents([.day, .month], from: holiday.date)
+    let df = DateFormatter()
+    df.locale = appLocale()
+    if let y = holiday.year {
+        comps.year = y
+        let date = calendar.date(from: comps) ?? holiday.date
+        df.setLocalizedDateFormatFromTemplate("d MMMM y")
+        return df.string(from: date)
+    } else {
+        // Показать только день и месяц, без года
+        df.setLocalizedDateFormatFromTemplate("d MMMM")
+        return df.string(from: holiday.date)
+    }
+}
+
+@MainActor struct HolidayDetailView: View {
     let holiday: Holiday
     @ObservedObject var vm: HolidaysViewModel
     @Environment(\.dismiss) private var dismiss
@@ -22,35 +49,28 @@ struct HolidayDetailView: View {
                 AppBackground()
                 
                 ScrollView {
-                    VStack(spacing: 24) {
-                        // Аватар с градиентом и тенью
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color.blue.opacity(0.4), Color.purple.opacity(0.4)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 140, height: 140)
-                                .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 4)
-                            
-                            Text(holiday.icon?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? holiday.icon!.trimmingCharacters(in: .whitespacesAndNewlines) : "🎉")
-                                .font(.system(size: 72))
-                        }
+                    VStack(spacing: EditorTheme.detailHeaderSpacing) {
+                        // Аватар (централизованный AvatarKit) — дефолт как в контактах: монограмма по первой букве
+                        let trimmedTitle = holiday.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let avatarSource: AvatarSource = {
+                            if let e = holiday.icon?.trimmingCharacters(in: .whitespacesAndNewlines), !e.isEmpty {
+                                return .emoji(e)
+                            } else {
+                                let initial = trimmedTitle.first.map { String($0).uppercased() } ?? "?"
+                                return .monogram(initial)
+                            }
+                        }()
+                        AppAvatarView(
+                            source: avatarSource,
+                            shape: .circle,
+                            size: .headerXL
+                        )
                         
-                        // Название праздника - как имя и фамилия в ContactDetailView
-                        VStack(spacing: 4) {
-                            Text(holiday.title)
-                                .font(.system(size: 36, weight: .bold))
-                                .foregroundColor(.primary)
-                                .multilineTextAlignment(.center)
-                            Text("") // Placeholder, так как фамилии у праздника нет
-                                .font(.system(size: 28, weight: .semibold))
-                                .foregroundColor(.primary)
-                                .multilineTextAlignment(.center)
-                        }
+                        // Название праздника — как имя в ContactDetailView (без второй строки)
+                        Text(holiday.title)
+                            .font(.system(size: 36, weight: .bold))
+                            .foregroundColor(.primary)
+                            .multilineTextAlignment(.center)
                         
                         // Карточки даты и типа
                         VStack(spacing: 12) {
@@ -60,7 +80,9 @@ struct HolidayDetailView: View {
                                     .foregroundColor(.pink)
                                     .font(.system(size: CardStyle.Detail.iconSize))
 
-                                Text("Дата праздника: \(holiday.date.formatted(date: .numeric, time: .omitted))")
+                                let prefix = String(localized: "holiday.date.prefix", defaultValue: "Дата праздника", bundle: appBundle(), locale: appLocale())
+                                let dateText = formattedHolidayDate(holiday)
+                                Text("\(prefix): \(dateText)")
                                     .font(CardStyle.Detail.font)
                                     .foregroundColor(.primary)
 
@@ -68,15 +90,7 @@ struct HolidayDetailView: View {
                             }
                             .padding(.horizontal, CardStyle.Detail.innerHorizontalPadding)
                             .padding(.vertical, CardStyle.Detail.verticalPadding)
-                            .background(
-                                RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                                    .fill(CardStyle.backgroundColor)
-                                    .shadow(color: CardStyle.shadowColor, radius: CardStyle.shadowRadius, y: CardStyle.shadowYOffset)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                                            .stroke(CardStyle.borderColor, lineWidth: 0.7)
-                                    )
-                            )
+                            .cardBackground()
 
                             // Карточка типа
                             HStack(alignment: .top, spacing: CardStyle.Detail.spacing) {
@@ -92,29 +106,17 @@ struct HolidayDetailView: View {
                             }
                             .padding(.horizontal, CardStyle.Detail.innerHorizontalPadding)
                             .padding(.vertical, CardStyle.Detail.verticalPadding)
-                            .background(
-                                RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                                    .fill(CardStyle.backgroundColor)
-                                    .shadow(color: CardStyle.shadowColor, radius: CardStyle.shadowRadius, y: CardStyle.shadowYOffset)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                                            .stroke(CardStyle.borderColor, lineWidth: 0.7)
-                                    )
-                            )
+                            .cardBackground()
                         }
-                        .frame(maxWidth: 500)
-                        .padding(.horizontal, 16)
                         
                         Spacer()
                     }
-                    .padding(.top, 80)
+                    .frame(maxWidth: EditorTheme.detailMaxWidth)
+                    .padding(.horizontal, EditorTheme.detailHorizontalPadding)
+                    .padding(.top, EditorTheme.detailHeaderTop)
                 }
             }
-            .overlay(alignment: .top) {
-                TopBarButtons(onBack: { dismiss() }, onEdit: { navigateToEdit = true }, geo: geo)
-            }
         }
-        .navigationBarHidden(true)
         .navigationDestination(isPresented: $navigateToEdit) {
             EditHolidayView(
                 holiday: holiday,
@@ -127,35 +129,14 @@ struct HolidayDetailView: View {
                 }
             )
         }
-    }
-}
-
-struct TopBarButtons: View {
-    let onBack: () -> Void
-    let onEdit: () -> Void
-    let geo: GeometryProxy
-
-    var body: some View {
-        HStack {
-            Button(action: onBack) {
-                Image(systemName: "chevron.backward")
-                    .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                    .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                    .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                    .foregroundColor(AppButtonStyle.Circular.iconColor)
-                    .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-            }
-            Spacer()
-            Button(action: onEdit) {
-                Image(systemName: "pencil")
-                    .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                    .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                    .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                    .foregroundColor(AppButtonStyle.Circular.iconColor)
-                    .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    navigateToEdit = true
+                } label: {
+                    Image(systemName: "pencil")
+                }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
     }
 }

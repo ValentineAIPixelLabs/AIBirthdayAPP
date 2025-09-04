@@ -1,4 +1,18 @@
+
 import Foundation
+
+// MARK: - Localization helpers (file-local)
+private func appLocale() -> Locale {
+    if let code = UserDefaults.standard.string(forKey: "app.language.code") { return Locale(identifier: code) }
+    if let code = Bundle.main.preferredLocalizations.first { return Locale(identifier: code) }
+    return .current
+}
+private func appBundle() -> Bundle {
+    if let code = UserDefaults.standard.string(forKey: "app.language.code"),
+       let path = Bundle.main.path(forResource: code, ofType: "lproj"),
+       let bundle = Bundle(path: path) { return bundle }
+    return .main
+}
 
 enum BirthdaySection: Hashable {
     case today // "Сегодня"
@@ -122,14 +136,19 @@ class BirthdaySectionsViewModel {
     func sectionTitle(_ section: BirthdaySection) -> String {
         switch section {
         case .today:
-            return "Сегодня"
+            return appBundle().localizedString(forKey: "section.today",
+                                               value: "Сегодня",
+                                               table: "Localizable")
         case .upcoming:
-            return "Скоро"
+            return appBundle().localizedString(forKey: "section.upcoming",
+                                               value: "Скоро",
+                                               table: "Localizable")
         case .month(let month, let year):
             let df = DateFormatter()
-            df.locale = Locale(identifier: "ru_RU")
-            df.dateFormat = "LLLL" // именительный падеж
-            let monthName = df.standaloneMonthSymbols[(month-1) % 12].capitalized
+            df.locale = appLocale()
+            df.dateFormat = "LLLL"
+            // Название месяца в выбранной локали
+            let monthName = df.standaloneMonthSymbols[(month - 1) % 12].capitalized
             let currComps = calendar.dateComponents([.month, .year], from: now)
             let currMonth = currComps.month ?? 0
             let currYear = currComps.year ?? 0
@@ -139,7 +158,9 @@ class BirthdaySectionsViewModel {
                 return monthName
             }
         case .noBirthday:
-            return "Без даты рождения"
+            return appBundle().localizedString(forKey: "section.no_birthday",
+                                               value: "Без даты рождения",
+                                               table: "Localizable")
         }
     }
 }

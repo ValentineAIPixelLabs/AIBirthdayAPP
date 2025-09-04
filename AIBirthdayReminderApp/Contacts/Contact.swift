@@ -25,6 +25,7 @@ public struct CardHistoryItem: Identifiable, Codable, Equatable {
 }
 
 struct Contact: Identifiable, Codable, Equatable {
+    static let unspecified = "Не указано"
     let id: UUID
     var name: String
     var surname: String?
@@ -52,6 +53,20 @@ struct Contact: Identifiable, Codable, Equatable {
     
     var congratsHistory: [CongratsHistoryItem] = []
     var cardHistory: [CardHistoryItem] = []
+
+    var relationTypeResolved: String {
+        if let value = relationType?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+            return value
+        }
+        return Contact.unspecified
+    }
+
+    var genderResolved: String {
+        if let value = gender?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+            return value
+        }
+        return Contact.unspecified
+    }
     
     var age: Int? {
         guard let birthday = birthday, let year = birthday.year else { return nil }

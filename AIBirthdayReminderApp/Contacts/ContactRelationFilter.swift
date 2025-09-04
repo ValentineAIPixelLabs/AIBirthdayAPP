@@ -1,6 +1,7 @@
 import Foundation
 
 
+@MainActor
 class ChipRelationFilter: ObservableObject {
     @Published var selected: String
     @Published var allRelations: [String]

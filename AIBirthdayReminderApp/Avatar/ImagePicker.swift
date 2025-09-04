@@ -1,4 +1,3 @@
-
 import SwiftUI
 import UIKit
 
@@ -24,16 +23,20 @@ struct ImagePicker: UIViewControllerRepresentable {
             self.completion = completion
         }
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            picker.dismiss(animated: true)
-            if let image = info[.originalImage] as? UIImage {
-                completion(image)
-            } else {
-                completion(nil)
+            DispatchQueue.main.async {
+                if let image = info[.originalImage] as? UIImage {
+                    self.completion(image)
+                } else {
+                    self.completion(nil)
+                }
+                picker.dismiss(animated: true)
             }
         }
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            picker.dismiss(animated: true)
-            completion(nil)
+            DispatchQueue.main.async {
+                self.completion(nil)
+                picker.dismiss(animated: true)
+            }
         }
     }
 }

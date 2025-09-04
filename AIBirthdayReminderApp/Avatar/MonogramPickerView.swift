@@ -17,7 +17,7 @@ struct MonogramPickerView: View {
                 .font(.system(size: 44, weight: .bold))
                 .multilineTextAlignment(.center)
                 .frame(width: 80)
-                .onChange(of: monogramInput) {
+                .onChange(of: monogramInput) { _ in
                     // Берём только первую букву и делаем заглавной
                     if let first = monogramInput.first {
                         let capital = String(first).uppercased()

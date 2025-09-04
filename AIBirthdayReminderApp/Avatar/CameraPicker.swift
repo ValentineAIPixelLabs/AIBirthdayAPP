@@ -21,13 +21,17 @@ struct CameraPicker: UIViewControllerRepresentable {
         init(_ parent: CameraPicker) { self.parent = parent }
 
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            if let image = info[.originalImage] as? UIImage {
-                parent.image = image
+            DispatchQueue.main.async {
+                if let image = info[.originalImage] as? UIImage {
+                    self.parent.image = image
+                }
+                picker.dismiss(animated: true)
             }
-            picker.dismiss(animated: true)
         }
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            picker.dismiss(animated: true)
+            DispatchQueue.main.async {
+                picker.dismiss(animated: true)
+            }
         }
     }
 }

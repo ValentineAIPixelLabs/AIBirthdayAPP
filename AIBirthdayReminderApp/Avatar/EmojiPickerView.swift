@@ -6,7 +6,7 @@ struct EmojiCategory: Identifiable {
     let emojis: [String]
 }
 
-struct EmojiPickerView: View {
+@MainActor struct EmojiPickerView: View {
     @Environment(\.dismiss) var dismiss
     let onSelect: (String?) -> Void
 
@@ -49,8 +49,10 @@ struct EmojiPickerView: View {
     @ViewBuilder
     private func emojiButton(_ emoji: String) -> some View {
         Button(action: {
-            onSelect(emoji)
-            dismiss()
+            DispatchQueue.main.async {
+                onSelect(emoji)
+                dismiss()
+            }
         }) {
             Text(emoji)
                 .font(.system(size: 32))

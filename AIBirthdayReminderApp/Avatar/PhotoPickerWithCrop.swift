@@ -26,15 +26,19 @@ struct PhotoPickerWithCrop: UIViewControllerRepresentable {
         }
 
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            picker.dismiss(animated: true)
-            let edited = info[.editedImage] as? UIImage
-            let original = info[.originalImage] as? UIImage
-            parent.onSelect(edited ?? original)
+            DispatchQueue.main.async {
+                let edited = info[.editedImage] as? UIImage
+                let original = info[.originalImage] as? UIImage
+                self.parent.onSelect(edited ?? original)
+                picker.dismiss(animated: true)
+            }
         }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            picker.dismiss(animated: true)
-            parent.onSelect(nil)
+            DispatchQueue.main.async {
+                self.parent.onSelect(nil)
+                picker.dismiss(animated: true)
+            }
         }
     }
 }

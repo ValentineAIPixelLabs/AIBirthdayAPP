@@ -1,16 +1,8 @@
-//
-//  ContactPickerView.swift
-//  AIBirthdayReminderApp
-//
-//  Created by Александр Дротенко on 29.06.2025.
-//
-
-
-
 import SwiftUI
 
 
 // Теперь компонент используется как ContactSelectSheetView(vm: ..., onContactSelected: ...)
+@MainActor
 struct ContactSelectSheetView: View {
     @Environment(\.dismiss) var dismiss
 
@@ -34,8 +26,10 @@ struct ContactSelectSheetView: View {
         NavigationStack {
             List(filteredContacts) { contact in
                 Button {
-                    onContactSelected(contact)
-                    dismiss()
+                    DispatchQueue.main.async {
+                        onContactSelected(contact)
+                        dismiss()
+                    }
                 } label: {
                     HStack(spacing: 12) {
                         AvatarView(contact: contact, size: 40)
@@ -64,6 +58,7 @@ struct ContactSelectSheetView: View {
 
 // Используй свой AvatarView для отображения аватара контакта.
 // Если в проекте нет AvatarView, замени на простую инициал буквы:
+@MainActor
 struct AvatarView: View {
     let contact: Contact
     let size: CGFloat

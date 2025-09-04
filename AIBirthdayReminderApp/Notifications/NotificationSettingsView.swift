@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct NotificationSettingsView: View {
+@MainActor struct NotificationSettingsView: View {
     @Binding var settings: NotificationSettings
     @Environment(\.dismiss) var dismiss
 

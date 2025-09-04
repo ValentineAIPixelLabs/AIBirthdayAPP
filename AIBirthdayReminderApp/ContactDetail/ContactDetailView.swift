@@ -1,30 +1,14 @@
 import SwiftUI
 import UIKit
 
-
-
 struct ContactDetailView: View {
     let isTestMode = false
     @ObservedObject var vm: ContactsViewModel
     let contactId: UUID
-
     
-    @State private var pickedImage: UIImage?
-    @State private var showAvatarSheet = false
-    @State private var showImagePicker = false
-    @State private var showCameraPicker = false
-    @State private var showEmojiPicker = false
-    @State private var showMonogramPicker = false
-    @State private var pickedEmoji: String?
-    @State private var pickedMonogram: String?
-    @State private var monogramColor: Color = .blue
-
-    // Удалены состояния, связанные с генерацией поздравлений и открыток
-
-    @AppStorage("openai_api_key") private var apiKey: String = ""
 
     @Environment(\.dismiss) var dismiss
-    @State private var selectedContactForEdit: Contact? = nil
+    @State private var isEditActive = false
 
     var contact: Contact? {
         vm.contacts.first(where: { $0.id == contactId })
@@ -37,123 +21,98 @@ struct ContactDetailView: View {
 
     let headerHeight: CGFloat = 360
 
+    // MARK: - Localization helpers (file-local)
+    private func appLocale() -> Locale {
+        if let code = UserDefaults.standard.string(forKey: "app.language.code") {
+            return Locale(identifier: code)
+        }
+        if let code = Bundle.main.preferredLocalizations.first {
+            return Locale(identifier: code)
+        }
+        return .current
+    }
+    private func appBundle() -> Bundle {
+        if let code = UserDefaults.standard.string(forKey: "app.language.code"),
+           let path = Bundle.main.path(forResource: code, ofType: "lproj"),
+           let bundle = Bundle(path: path) {
+            return bundle
+        }
+        return .main
+    }
+
+    // Display mapper: keeps stored value intact, shows localized title
+    private func localizedRelationTitle(_ value: String) -> String {
+        let b = appBundle()
+        switch value {
+        case Contact.unspecified:
+            return b.localizedString(forKey: "common.unspecified", value: value, table: "Localizable")
+        case "Брат":          return b.localizedString(forKey: "relation.brother", value: value, table: "Localizable")
+        case "Сестра":        return b.localizedString(forKey: "relation.sister", value: value, table: "Localizable")
+        case "Отец":          return b.localizedString(forKey: "relation.father", value: value, table: "Localizable")
+        case "Мать":          return b.localizedString(forKey: "relation.mother", value: value, table: "Localizable")
+        case "Бабушка":       return b.localizedString(forKey: "relation.grandmother", value: value, table: "Localizable")
+        case "Дедушка":       return b.localizedString(forKey: "relation.grandfather", value: value, table: "Localizable")
+        case "Сын":           return b.localizedString(forKey: "relation.son", value: value, table: "Localizable")
+        case "Дочь":          return b.localizedString(forKey: "relation.daughter", value: value, table: "Localizable")
+        case "Коллега":       return b.localizedString(forKey: "relation.colleague", value: value, table: "Localizable")
+        case "Руководитель":  return b.localizedString(forKey: "relation.manager", value: value, table: "Localizable")
+        case "Начальник":     return b.localizedString(forKey: "relation.boss", value: value, table: "Localizable")
+        case "Товарищ":       return b.localizedString(forKey: "relation.companion", value: value, table: "Localizable")
+        case "Друг":          return b.localizedString(forKey: "relation.friend", value: value, table: "Localizable")
+        case "Лучший друг":   return b.localizedString(forKey: "relation.best_friend", value: value, table: "Localizable")
+        case "Супруг":        return b.localizedString(forKey: "relation.spouse_male", value: value, table: "Localizable")
+        case "Супруга":       return b.localizedString(forKey: "relation.spouse_female", value: value, table: "Localizable")
+        case "Партнер":       return b.localizedString(forKey: "relation.partner", value: value, table: "Localizable")
+        case "Девушка":       return b.localizedString(forKey: "relation.girlfriend", value: value, table: "Localizable")
+        case "Парень":        return b.localizedString(forKey: "relation.boyfriend", value: value, table: "Localizable")
+        case "Клиент":        return b.localizedString(forKey: "relation.client", value: value, table: "Localizable")
+        default:               return value
+        }
+    }
+
     var body: some View {
         GeometryReader { geo in
             if let contact = contact {
                 ZStack {
                     AppBackground()
-                    ZStack(alignment: .top) {
-                        ScrollView(.vertical, showsIndicators: false) {
-                            VStack(spacing: 20) {
-                                headerBlock(contact: contact)
-                                birthdayBlock(contact: contact)
-                                occupationBlock(contact: contact)
-                                hobbiesBlock(contact: contact)
-                                leisureBlock(contact: contact)
-                                additionalInfoBlock(contact: contact)
-                                actionsPanel(contact: contact)
-                                    .padding(.bottom, 40)
-                            }
-                            .frame(maxWidth: 500)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 80)
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: 12) {
+                            headerBlock(contact: contact)
+                            birthdayBlock(contact: contact)
+                            occupationBlock(contact: contact)
+                            hobbiesBlock(contact: contact)
+                            leisureBlock(contact: contact)
+                            additionalInfoBlock(contact: contact)
+                            actionsPanel(contact: contact)
+                                .padding(.bottom, 40)
                         }
-                        topButtons(geo: geo)
-                    }
-                    .edgesIgnoringSafeArea(.top)
-                }
-            }
-        }
-        // onAppear без вызова handleOnAppear
-        .navigationBarBackButtonHidden(true)
-        .navigationBarHidden(true)
-        
-        .navigationDestination(item: $selectedContactForEdit) { contact in
-                    EditContactView(vm: vm, contact: contact)
-                }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-        
-        .sheet(isPresented: $showAvatarSheet) {
-            AvatarPickerSheet(
-                onCamera: {
-                    showAvatarSheet = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showCameraPicker = true }
-                },
-                onPhoto: {
-                    showAvatarSheet = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showImagePicker = true }
-                },
-                onEmoji: {
-                    showAvatarSheet = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showEmojiPicker = true }
-                },
-                onMonogram: {
-                    showAvatarSheet = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                        if var contact = contact {
-                            contact.imageData = nil
-                            contact.emoji = nil
-                            vm.updateContact(contact)
-                        }
-                        pickedImage = nil
-                        pickedEmoji = nil
-                        pickedMonogram = ""
+                        .frame(maxWidth: EditorTheme.detailMaxWidth)
+                        .padding(.horizontal, EditorTheme.detailHorizontalPadding)
+                        .padding(.top, EditorTheme.detailHeaderTop)
                     }
                 }
-            )
-            .presentationDetents([.height(225)])
-        }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-        .sheet(isPresented: $showImagePicker) {
-            PhotoPickerWithCrop { image in
-                if let image = image, var contact = contact {
-                    contact.imageData = image.jpegData(compressionQuality: 0.9)
-                    contact.emoji = nil
-                    vm.updateContact(contact)
-                }
-                pickedImage = nil
-                pickedEmoji = nil
-                pickedMonogram = ""
-                showImagePicker = false
             }
         }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-        .fullScreenCover(isPresented: $showCameraPicker) {
-            CameraPicker(image: $pickedImage)
-                .ignoresSafeArea()
-        }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-        .onChange(of: pickedMonogram) { newMonogram, _ in
-            // Если выбрали монограмму, сбрасываем изображение и эмодзи и обновляем контакт
-            if let newMonogram = newMonogram, !newMonogram.isEmpty {
-                pickedImage = nil
-                pickedEmoji = nil
-                if var contact = contact {
-                    contact.imageData = nil
-                    contact.emoji = nil
-                    vm.updateContact(contact)
+        .toolbar {
+            // Trailing: edit (pencil)
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    if contact != nil {
+                        isEditActive = true
+                    }
+                } label: {
+                    Image(systemName: "pencil")
                 }
             }
         }
-        .sheet(isPresented: $showEmojiPicker) {
-            EmojiPickerView { emoji in
-                if let emoji = emoji, var contact = contact {
-                    contact.emoji = emoji
-                    contact.imageData = nil
-                    vm.updateContact(contact)
-                }
-                pickedImage = nil
-                pickedEmoji = nil
-                pickedMonogram = ""
-                showEmojiPicker = false
+        .navigationDestination(isPresented: $isEditActive) {
+            if let contact = contact {
+                EditContactView(vm: vm, contact: contact)
+            } else {
+                EmptyView()
             }
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
-        .sheet(isPresented: $showMonogramPicker) {
-            MonogramPickerView(selectedMonogram: $pickedMonogram, color: $monogramColor)
-        }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-        
         .onAppear {
         }
     }
@@ -177,16 +136,8 @@ struct ContactDetailView: View {
                 }
                 .padding(.vertical, CardStyle.Detail.verticalPadding)
                 .padding(.horizontal, CardStyle.Detail.innerHorizontalPadding)
-                .background(
-                    RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                        .fill(CardStyle.backgroundColor)
-                        .shadow(color: CardStyle.shadowColor, radius: CardStyle.shadowRadius, y: CardStyle.shadowYOffset)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                                .stroke(CardStyle.borderColor, lineWidth: 0.7)
-                        )
-                )
-                .padding(.top, CardStyle.verticalPadding)
+                .cardBackground()
+                .padding(.top, 6)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -210,16 +161,8 @@ struct ContactDetailView: View {
                 }
                 .padding(.vertical, CardStyle.Detail.verticalPadding)
                 .padding(.horizontal, CardStyle.Detail.innerHorizontalPadding)
-                .background(
-                    RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                        .fill(CardStyle.backgroundColor)
-                        .shadow(color: CardStyle.shadowColor, radius: CardStyle.shadowRadius, y: CardStyle.shadowYOffset)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                                .stroke(CardStyle.borderColor, lineWidth: 0.7)
-                        )
-                )
-                .padding(.top, CardStyle.verticalPadding)
+                .cardBackground()
+                .padding(.top, 6)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -243,16 +186,8 @@ struct ContactDetailView: View {
                 }
                 .padding(.vertical, CardStyle.Detail.verticalPadding)
                 .padding(.horizontal, CardStyle.Detail.innerHorizontalPadding)
-                .background(
-                    RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                        .fill(CardStyle.backgroundColor)
-                        .shadow(color: CardStyle.shadowColor, radius: CardStyle.shadowRadius, y: CardStyle.shadowYOffset)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                                .stroke(CardStyle.borderColor, lineWidth: 0.7)
-                        )
-                )
-                .padding(.top, CardStyle.verticalPadding)
+                .cardBackground()
+                .padding(.top, 6)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -276,16 +211,8 @@ struct ContactDetailView: View {
                 }
                 .padding(.vertical, CardStyle.Detail.verticalPadding)
                 .padding(.horizontal, CardStyle.Detail.innerHorizontalPadding)
-                .background(
-                    RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                        .fill(CardStyle.backgroundColor)
-                        .shadow(color: CardStyle.shadowColor, radius: CardStyle.shadowRadius, y: CardStyle.shadowYOffset)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                                .stroke(CardStyle.borderColor, lineWidth: 0.7)
-                        )
-                )
-                .padding(.top, CardStyle.verticalPadding)
+                .cardBackground()
+                .padding(.top, 6)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -293,14 +220,19 @@ struct ContactDetailView: View {
 
     // MARK: - Header
     private func headerBlock(contact: Contact) -> some View {
-        VStack(spacing: 10) {
-            ContactAvatarHeaderView(
-                contact: contact,
-                pickedImage: pickedImage,
-                pickedEmoji: pickedEmoji,
-                headerHeight: 140,
-                onTap: { showAvatarSheet = true }
-            )
+        VStack(spacing: EditorTheme.detailHeaderSpacing) {
+            // Централизованный аватар из AvatarKit
+            let avatarSource: AvatarSource = {
+                if let data = contact.imageData, let img = UIImage(data: data) {
+                    return .image(img)
+                } else if let e = contact.emoji, !e.isEmpty {
+                    return .emoji(e)
+                } else {
+                    let initial = contact.name.trimmingCharacters(in: .whitespacesAndNewlines).first.map { String($0).uppercased() } ?? "?"
+                    return .monogram(initial)
+                }
+            }()
+            AppAvatarView(source: avatarSource, shape: .circle, size: .headerXL, showsEditBadge: false)
             // Имя и фамилия (крупно, по центру)
             if let surname = contact.surname, !surname.isEmpty {
                 VStack(spacing: 0) {
@@ -321,9 +253,12 @@ struct ContactDetailView: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
             }
-            // Тип отношений — бейдж под именем/фамилией, если есть
-            if let relation = contact.relationType, !relation.isEmpty {
-                Text(relation)
+            // Тип отношений — бейдж под именем/фамилией, если явно указан (не пусто и не "Не указано")
+            if let rawRelation = contact.relationType?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !rawRelation.isEmpty,
+               rawRelation.caseInsensitiveCompare(Contact.unspecified) != .orderedSame {
+                let relationTitle = localizedRelationTitle(rawRelation)
+                Text(relationTitle)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(.black)
                     .padding(.horizontal, 16)
@@ -337,7 +272,6 @@ struct ContactDetailView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 20)
     }
 
     // MARK: - BirthdayBlock
@@ -353,15 +287,7 @@ struct ContactDetailView: View {
         }
         .padding(.vertical, CardStyle.Detail.verticalPadding)
         .padding(.horizontal, CardStyle.Detail.innerHorizontalPadding)
-        .background(
-            RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                .fill(CardStyle.backgroundColor)
-                .shadow(color: CardStyle.shadowColor, radius: CardStyle.shadowRadius, y: CardStyle.shadowYOffset)
-                .overlay(
-                    RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
-                        .stroke(CardStyle.borderColor, lineWidth: 0.7)
-                )
-        )
+        .cardBackground()
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
@@ -373,35 +299,6 @@ struct ContactDetailView: View {
     }
 
     // MARK: - Birthday Date Formatter
-
-    // MARK: - Top Buttons ("Назад", "Править")
-    private func topButtons(geo: GeometryProxy) -> some View {
-        HStack {
-            Button(action: { dismiss() }) {
-                Image(systemName: "chevron.backward")
-                    .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                    .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                    .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                    .foregroundColor(AppButtonStyle.Circular.iconColor)
-                    .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-            }
-            Spacer()
-            Button(action: {
-                if let contact = contact {
-                    selectedContactForEdit = contact
-                }
-            }) {
-                Image(systemName: "pencil")
-                    .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                    .background(Circle().fill(AppButtonStyle.Circular.backgroundColor))
-                    .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-                    .foregroundColor(AppButtonStyle.Circular.iconColor)
-                    .font(.system(size: AppButtonStyle.Circular.iconSize, weight: .semibold))
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, geo.safeAreaInsets.top + 8)
-    }
 
     
 }

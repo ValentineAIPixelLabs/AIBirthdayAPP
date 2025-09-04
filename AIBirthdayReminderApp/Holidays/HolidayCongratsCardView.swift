@@ -1,242 +1,359 @@
-//
-//  HolidayCongratsCardView.swift
-//  AIBirthdayReminderApp
-//
-//  Created by Александр Дротенко on 19.07.2025.
-//
-
 import SwiftUI
-    //import CardHistoryStore
+import Foundation
 
+// MARK: - Localization helpers (file-local)
+private func appLocale() -> Locale {
+    if let code = UserDefaults.standard.string(forKey: "app.language.code") { return Locale(identifier: code) }
+    if let code = Bundle.main.preferredLocalizations.first { return Locale(identifier: code) }
+    return .current
+}
+private func appBundle() -> Bundle {
+    if let code = UserDefaults.standard.string(forKey: "app.language.code"),
+       let path = Bundle.main.path(forResource: code, ofType: "lproj"),
+       let bundle = Bundle(path: path) { return bundle }
+    return .main
+}
+
+@MainActor
 struct HolidayCongratsCardView: View {
     let holiday: Holiday
     @ObservedObject var vm: ContactsViewModel
+    @EnvironmentObject var store: StoreKitManager
 
-    @State private var cardHistory: [UIImage] = []
-    @State private var congratsHistory: [String] = []
+    // История открыток по празднику
+    @State private var cardHistory: [CardHistoryItemWithImage] = []
+
+    // Состояния UI
     @State private var showCongratsActionSheet = false
     @State private var showContactPicker = false
-    @State private var selectedCard: UIImage?
-    @State private var isGenerating = false
-    @State private var isShowingCardPopup = false
+    @State private var showCardPopup = false
+    @State private var cardPopupImage: UIImage?
+    @State private var showCardShareSheet = false
+    @State private var allowCardPopupClose = false
+    @State private var isLoading = false
+    @State private var showStore = false
+
+
 
     var body: some View {
         ZStack {
             AppBackground()
-                .ignoresSafeArea()
-
             VStack(spacing: 0) {
-                topBar
+                ScrollView {
+                    VStack(spacing: 20) {
 
-                VStack(spacing: 16) {
-                    holidayBlock
-
-                    generateButton
-
-                    if cardHistory.isEmpty {
-                        Text("Нет открыток")
-                            .font(.body.weight(.medium))
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 100)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(16)
-                            .padding(.vertical, 32)
-                            .multilineTextAlignment(.center)
-                    } else {
-                        cardHistoryScroll
-                            .padding(.top, 24)
+                        // История открыток — вертикальная сетка 2 колонки
+                        HolidayCardHistorySection(
+                            cardHistory: $cardHistory,
+                            ownerId: holiday.id,
+                            onShowPopup: { image in
+                                cardPopupImage = image
+                                showCardPopup = true
+                            }
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 32)
                     }
+                    .padding(.top, 8)
+                    .padding(.bottom, 120)
                 }
-                .padding(.horizontal, 16)
-
-                Spacer()
-            }
-            .onAppear {
-                cardHistory = CardHistoryStore.loadHistory(for: holiday.id.uuidString)
-                congratsHistory = CardHistoryStore.loadCongratsHistory(for: holiday.id.uuidString)
+                
             }
         }
+        .onAppear {
+            cardHistory = CardHistoryManager.getCards(forHoliday: holiday.id)
+            Task {
+                store.startTransactionListener()
+                await store.fetchServerTokens()
+                await store.refreshSubscriptionStatus()
+            }
+        }
+        // Оверлей загрузки — системный спиннер
+        .overlay(
+            Group {
+                if isLoading {
+                    ZStack {
+                        Color.black.opacity(0.28).ignoresSafeArea()
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                            .controlSize(.large)
+                            .tint(.white)
+                            .scaleEffect(1.5)
+                    }
+                }
+            }
+        )
+        .navigationTitle(holiday.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showStore = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("\(store.purchasedTokenCount)")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(.tint)
+                }
+                .tint(Color(UIColor.systemBlue))
+                .buttonStyle(.plain)
+                .accessibilityLabel(appBundle().localizedString(forKey: "store.tokens.balance", value: "Баланс токенов", table: "Localizable"))
+            }
+        }
+        .fullScreenCover(
+            isPresented: Binding(
+                get: { showCardPopup },
+                set: { newValue in
+                    DispatchQueue.main.async {
+                        showCardPopup = newValue
+                        if !newValue {
+                            // refresh card history and clear image on close
+                            cardHistory = CardHistoryManager.getCards(forHoliday: holiday.id)
+                            cardPopupImage = nil
+                        }
+                    }
+                }
+            )
+        ) {
+            if let image = cardPopupImage {
+                ZStack {
+                    AppBackground().ignoresSafeArea()
+                    CardResultPopup(
+                        image: image,
+                        onCopy: {
+                            UIPasteboard.general.image = image
+                        },
+                        onShare: {
+                            showCardShareSheet = true
+                        },
+                        onSave: {
+                            UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+                        },
+                        onClose: {
+                            if allowCardPopupClose {
+                                showCardPopup = false
+                            }
+                        }
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
+                    .onAppear {
+                        allowCardPopupClose = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            allowCardPopupClose = true
+                        }
+                    }
+                }
+                .interactiveDismissDisabled(true)
+                .sheet(isPresented: $showCardShareSheet) {
+                    ActivityViewController(activityItems: [image])
+                }
+            }
+        }
+        .sheet(isPresented: $showStore) {
+            StoreView()
+        }
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 0) {
+                Button(action: { showCongratsActionSheet = true }) {
+                    HStack(spacing: 10) {
+                        Spacer()
+                        Text(appBundle().localizedString(forKey: "card.generate", value: "Сгенерировать открытку", table: "Localizable"))
+                            .font(.subheadline.weight(.bold))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                        HStack(spacing: 3) {
+                            Image(systemName: "bolt.fill")
+                                .foregroundColor(.yellow)
+                                .font(.system(size: 15, weight: .semibold))
+                            Text("4")
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.white.opacity(0.18)))
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppButtonStyle.Congratulate.cornerRadius, style: .continuous)
+                            .fill(AppButtonStyle.primaryFill())
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AppButtonStyle.Congratulate.cornerRadius, style: .continuous)
+                                    .fill(AppButtonStyle.primaryGloss())
+                            )
+                            .shadow(color: AppButtonStyle.Congratulate.shadow, radius: AppButtonStyle.Congratulate.shadowRadius, y: 2)
+                    )
+                }
+                .buttonStyle(.plain)
+                .opacity(isLoading ? 0.6 : 1)
+                .disabled(isLoading)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
+            }
+        }
+        // Выбор: общая открытка или для контакта
         .confirmationDialog(
-            "Выберите тип открытки",
+            appBundle().localizedString(forKey: "card.sheet.title", value: "Выберите тип открытки", table: "Localizable"),
             isPresented: $showCongratsActionSheet,
             titleVisibility: .visible
         ) {
-            Button("Общая открытка") {
-                generateCard(for: nil)
+            Button(appBundle().localizedString(forKey: "card.sheet.general", value: "Общая открытка", table: "Localizable")) {
+                handleGenerate(for: nil)
             }
-            Button("Для конкретного человека…") {
+            Button(appBundle().localizedString(forKey: "card.sheet.for_person", value: "Для конкретного человека…", table: "Localizable")) {
                 showContactPicker = true
             }
-            Button("Отмена", role: .cancel) {}
+            Button(appBundle().localizedString(forKey: "common.cancel", value: "Отмена", table: "Localizable"), role: .cancel) {}
         }
         .sheet(isPresented: $showContactPicker) {
             ContactSelectSheetView(vm: vm) { contact in
-                generateCard(for: contact)
-            }
-        }
-        .sheet(isPresented: $isShowingCardPopup) {
-            if let card = selectedCard {
-                CardResultPopup(
-                    image: card,
-                    onCopy: { copyImage(card) },
-                    onShare: { shareImage(card) },
-                    onSave: { saveImage(card) },
-                    onClose: { isShowingCardPopup = false }
-                )
-                .transition(.opacity)
-                .animation(.easeInOut, value: isShowingCardPopup)
+                handleGenerate(for: contact)
             }
         }
     }
 
-    // MARK: - Top Bar
-    private var topBar: some View {
-        HStack {
-            Button(action: { dismiss() }) {
-                Image(systemName: "chevron.backward")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 20, height: 20)
-                    .foregroundColor(.accentColor)
-                    .frame(width: 44, height: 44)
-                    .background(Color.accentColor.opacity(0.14))
-                    .clipShape(Circle())
-                    .shadow(color: Color.black.opacity(0.07), radius: 2)
+    // MARK: - Генерация открытки (обновлено)
+    private func handleGenerate(for contact: Contact?) {
+        guard !isLoading else { return }
+        isLoading = true
+
+        let completion = {
+            DispatchQueue.main.async {
+                self.cardHistory = CardHistoryManager.getCards(forHoliday: holiday.id)
+                if let newCard = cardHistory.sorted(by: { $0.date > $1.date }).first,
+                   let image = newCard.image {
+                    self.cardPopupImage = image
+                    self.showCardPopup = true
+                }
+                self.isLoading = false
+                Task { await store.fetchServerTokens() }
             }
-            Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
+
+        ChatGPTService.shared.generateCardForHoliday(
+            holidayId: holiday.id,
+            holidayTitle: holiday.title,
+            contact: contact,
+            completion: completion
+        )
     }
 
-    // MARK: - Holiday Info Block
-    private var holidayBlock: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Праздник: \(holiday.title)")
+}
+
+
+// MARK: - История открыток (2-колоночная сетка)
+@MainActor
+private struct HolidayCardHistorySection: View {
+    @Binding var cardHistory: [CardHistoryItemWithImage]
+    let ownerId: UUID
+    let onShowPopup: (UIImage) -> Void
+    @State private var showCopyAnimation: [UUID: Bool] = [:]
+
+    private var placeholderImage: UIImage { UIImage(systemName: "photo") ?? UIImage() }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(appBundle().localizedString(forKey: "history.cards.title", value: "История открыток", table: "Localizable"))
                 .font(.headline)
-                .foregroundColor(.primary)
+                .padding(.bottom, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(holiday.date.formatted(date: .long, time: .omitted))
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-        }
-        .padding(16)
-        .background(.regularMaterial)
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.07), radius: 4, x: 0, y: 2)
-    }
-
-    // MARK: - Generate Button
-    private var generateButton: some View {
-        Button {
-            showCongratsActionSheet = true
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "photo.on.rectangle.angled")
-                Text("Сгенерировать открытку")
-            }
-            .font(.body.weight(.semibold))
-            .foregroundColor(.white)
-            .frame(height: 56)
-            .frame(maxWidth: .infinity)
-            .background(Color.accentColor)
-            .cornerRadius(16)
-        }
-        .disabled(isGenerating)
-    }
-
-    // MARK: - Card History Scroll
-    private var cardHistoryScroll: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                ForEach(cardHistory, id: \.self) { card in
-                    Button {
-                        selectedCard = card
-                        isShowingCardPopup = true
-                    } label: {
-                        Image(uiImage: card)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 110, height: 148)
-                            .cornerRadius(16)
-                            .shadow(color: Color.black.opacity(0.09), radius: 5, x: 0, y: 2)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color(.systemBackground))
-                            )
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .contextMenu {
-                        Button {
-                            copyImage(card)
-                        } label: {
-                            Label("Копировать", systemImage: "doc.on.doc")
-                        }
-                        Button {
-                            shareImage(card)
-                        } label: {
-                            Label("Поделиться", systemImage: "square.and.arrow.up")
-                        }
-                        Button(role: .destructive) {
-                            deleteCard(card)
-                        } label: {
-                            Label("Удалить", systemImage: "trash")
-                        }
+            if cardHistory.isEmpty {
+                Text(appBundle().localizedString(forKey: "history.cards.empty", value: "Нет открыток", table: "Localizable"))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                let columns = [GridItem(.adaptive(minimum: 160), spacing: 16)]
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
+                    ForEach(cardHistory, id: \.id) { item in
+                        HolidayCardImageItem(
+                            image: item.image ?? placeholderImage,
+                            date: item.date,
+                            onDelete: {
+                                CardHistoryManager.deleteCard(item.id)
+                                cardHistory = CardHistoryManager.getCards(forHoliday: ownerId)
+                            },
+                            onCopy: {
+                                withAnimation(.spring()) { showCopyAnimation[item.id] = true }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                    withAnimation { showCopyAnimation[item.id] = false }
+                                }
+                            },
+                            showCopyAnimation: showCopyAnimation[item.id] ?? false,
+                            onShowPopup: { image in onShowPopup(image) }
+                        )
                     }
                 }
             }
-            .padding(.vertical, 8)
         }
     }
+}
+@MainActor
+private struct HolidayCardImageItem: View {
+    let image: UIImage
+    let date: Date?
+    let onDelete: () -> Void
+    let onCopy: () -> Void
+    let showCopyAnimation: Bool
+    let onShowPopup: (UIImage) -> Void
+    @State private var isShareSheetPresented = false
 
-    // MARK: - Генерация открытки
-    private func generateCard(for contact: Contact?) {
-        isGenerating = true
-        // Сохраняем демо-текстовое поздравление
-        let demoCongrats = "С праздником! Желаю счастья, здоровья и ярких моментов!"
-        CardHistoryStore.addCongrats(demoCongrats, for: holiday.id.uuidString)
-        congratsHistory = CardHistoryStore.loadCongratsHistory(for: holiday.id.uuidString)
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            VStack(alignment: .leading, spacing: 6) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity)
+                    .aspectRatio(1, contentMode: .fill)
+                    .clipped()
+                    .cornerRadius(12)
+                    .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+                    .onTapGesture { onShowPopup(image) }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            if let demoImage = UIImage(systemName: "gift") {
-                cardHistory.insert(demoImage, at: 0)
-                CardHistoryStore.saveHistory(cardHistory, for: holiday.id.uuidString)
+                if let date {
+                    Text(date, style: .date)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
-            isGenerating = false
-        }
-    }
+            .contextMenu {
+                Button {
+                    UIPasteboard.general.image = image
+                    onCopy()
+                } label: {
+                    Label(appBundle().localizedString(forKey: "common.copy", value: "Копировать", table: "Localizable"), systemImage: "doc.on.doc")
+                }
+                Button {
+                    isShareSheetPresented = true
+                } label: {
+                    Label(appBundle().localizedString(forKey: "common.share", value: "Поделиться", table: "Localizable"), systemImage: "square.and.arrow.up")
+                }
+                Button(role: .destructive) {
+                    onDelete()
+                } label: {
+                    Label(appBundle().localizedString(forKey: "common.delete", value: "Удалить", table: "Localizable"), systemImage: "trash")
+                }
+            }
+            .sheet(isPresented: $isShareSheetPresented) {
+                ActivityViewController(activityItems: [image])
+            }
 
-    // MARK: - Копирование изображения в буфер
-    private func copyImage(_ image: UIImage) {
-        UIPasteboard.general.image = image
-    }
-
-    // MARK: - Поделиться изображением
-    private func shareImage(_ image: UIImage) {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let rootVC = windowScene.windows.first?.rootViewController else { return }
-        let activityVC = UIActivityViewController(activityItems: [image], applicationActivities: nil)
-        rootVC.present(activityVC, animated: true)
-    }
-
-    // MARK: - Сохранить изображение в фотоальбом
-    private func saveImage(_ image: UIImage) {
-        UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
-    }
-
-    // MARK: - Удаление открытки из истории
-    private func deleteCard(_ card: UIImage) {
-        if let index = cardHistory.firstIndex(of: card) {
-            cardHistory.remove(at: index)
-            CardHistoryStore.saveHistory(cardHistory, for: holiday.id.uuidString)
-            if selectedCard == card {
-                selectedCard = nil
-                isShowingCardPopup = false
+            if showCopyAnimation {
+                Image(systemName: "doc.on.doc.fill")
+                    .foregroundColor(.accentColor)
+                    .padding(8)
+                    .background(Color(.systemBackground).opacity(0.9))
+                    .clipShape(Circle())
+                    .transition(.scale.combined(with: .opacity))
             }
         }
     }
-
-    // MARK: - Навигация назад
-    @Environment(\.dismiss) private var dismiss
 }

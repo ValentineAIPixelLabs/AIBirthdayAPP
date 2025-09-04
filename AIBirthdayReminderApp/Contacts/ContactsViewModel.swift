@@ -1,16 +1,27 @@
 import Foundation
 import CoreData
 import UIKit
+import SwiftUI
 
+@MainActor
 class ContactsViewModel: ObservableObject {
     enum AppColorScheme: String, CaseIterable, Identifiable, Codable {
         case system, light, dark
         var id: String { rawValue }
+        /// SwiftUI-aware key for use with Text(...), respects \(.locale)
+        var labelKey: LocalizedStringKey {
+            switch self {
+            case .system: return "theme.mode.auto"
+            case .light:  return "theme.mode.light"
+            case .dark:   return "theme.mode.dark"
+            }
+        }
+        /// Convenience String if you need a plain String
         var label: String {
             switch self {
-            case .system: return "Авто"
-            case .light: return "Дневной"
-            case .dark: return "Ночной"
+            case .system: return String(localized: "theme.mode.auto")
+            case .light:  return String(localized: "theme.mode.light")
+            case .dark:   return String(localized: "theme.mode.dark")
             }
         }
     }
@@ -81,7 +92,7 @@ class ContactsViewModel: ObservableObject {
     }
     
     private let notificationSettingsKey = "globalNotificationSettings"
-    private let context = CoreDataManager.shared.context
+    private let viewContext = CoreDataManager.shared.viewContext
     
     var sortedContacts: [Contact] {
         contacts.sorted(by: {
@@ -109,7 +120,7 @@ class ContactsViewModel: ObservableObject {
         contacts.append(contact)
         saveContactToCoreData(contact)
         NotificationManager.shared.scheduleBirthdayNotifications(for: contact, settings: contact.notificationSettings)
-        print("Добавлен контакт: \(contact.name), id: \(contact.id)")
+        
     }
     
     func removeContact(at offsets: IndexSet) {
@@ -117,14 +128,14 @@ class ContactsViewModel: ObservableObject {
             let contact = contacts[index]
             NotificationManager.shared.removeBirthdayNotifications(for: contact)
             deleteContactFromCoreData(contact.id)
-            print("Удалён контакт: \(contact.name), id: \(contact.id)")
+            
         }
         contacts.remove(atOffsets: offsets)
     }
     
     func removeContact(_ contact: Contact) {
         removeContactById(contact.id)
-        print("Удалён контакт по id: \(contact.id)")
+        
     }
     
     func updateContact(_ updated: Contact) {
@@ -147,10 +158,14 @@ class ContactsViewModel: ObservableObject {
     
     private func loadContactsFromCoreData() {
         let fetchRequest: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
-        if let entities = try? context.fetch(fetchRequest) {
+        fetchRequest.fetchBatchSize = 50
+
+        do {
+            let entities = try viewContext.fetch(fetchRequest)
             contacts = entities.compactMap { entity in
-                Contact(
-                    id: entity.id ?? UUID(),
+                guard let entityId = entity.id else { return nil }
+                return Contact(
+                    id: entityId,
                     name: entity.name ?? "",
                     surname: entity.surname,
                     nickname: entity.nickname,
@@ -161,11 +176,7 @@ class ContactsViewModel: ObservableObject {
                         let month = Int(entity.birthdayMonth)
                         let year = Int(entity.birthdayYear)
                         if day != 0 && month != 0 {
-                            return Birthday(
-                                day: day,
-                                month: month,
-                                year: year != 0 ? year : nil
-                            )
+                            return Birthday(day: day, month: month, year: year != 0 ? year : nil)
                         }
                         return nil
                     }(),
@@ -182,67 +193,83 @@ class ContactsViewModel: ObservableObject {
                     leisure: entity.leisure,
                     additionalInfo: entity.additionalInfo,
                     phoneNumber: entity.phoneNumber,
-                    congratsHistory: CongratsHistoryManager.getCongrats(for: entity.id ?? UUID()),
-                    cardHistory: CardHistoryManager.getCards(for: entity.id ?? UUID()).map {
+                    congratsHistory: CongratsHistoryManager.getCongrats(for: entityId),
+                    cardHistory: CardHistoryManager.getCards(for: entityId).map {
                         CardHistoryItem(id: $0.id, date: $0.date, cardID: $0.cardID)
                     }
                 )
             }
-            print("Загружено контактов из CoreData: \(contacts.count)")
-            contacts.forEach { print("Contact: \($0.name), id: \($0.id)") }
-        } else {
-            print("Не удалось загрузить контакты из CoreData")
+        } catch {
+            print("❌ Не удалось загрузить контакты из CoreData: \(error)")
         }
     }
     
     private func saveContactToCoreData(_ contact: Contact) {
-        let fetchRequest: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
-        fetchRequest.predicate = NSPredicate(format: "id == %@", contact.id as CVarArg)
-        let entity: ContactEntity
-        if let result = try? context.fetch(fetchRequest), let existing = result.first {
-            entity = existing
-        } else {
-            entity = ContactEntity(context: context)
-            entity.id = contact.id
+        CoreDataManager.shared.performBackgroundTask(author: "saveContact") { ctx in
+            let req: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+            req.predicate = NSPredicate(format: "id == %@", contact.id as CVarArg)
+            req.fetchLimit = 1
+
+            let entity: ContactEntity
+            do {
+                if let existing = try ctx.fetch(req).first {
+                    entity = existing
+                } else {
+                    entity = ContactEntity(context: ctx)
+                    entity.id = contact.id
+                }
+            } catch {
+                assertionFailure("❌ Fetch ContactEntity error: \(error)")
+                return
+            }
+
+            entity.name = contact.name
+            entity.surname = contact.surname
+            entity.nickname = contact.nickname
+            entity.relationType = contact.relationType
+            entity.gender = contact.gender
+
+            if let bday = contact.birthday {
+                entity.birthdayDay = Int16(bday.day ?? 0)
+                entity.birthdayMonth = Int16(bday.month ?? 0)
+                entity.birthdayYear = Int16(bday.year ?? 0)
+            } else {
+                entity.birthdayDay = 0
+                entity.birthdayMonth = 0
+                entity.birthdayYear = 0
+            }
+
+            entity.emoji = contact.emoji
+            entity.imageData = contact.imageData
+            entity.occupation = contact.occupation
+            entity.hobbies = contact.hobbies
+            entity.leisure = contact.leisure
+            entity.additionalInfo = contact.additionalInfo
+            entity.phoneNumber = contact.phoneNumber
+
+            // notificationSettings
+            entity.notificationEnabled = contact.notificationSettings.enabled
+            entity.notificationDaysBefore = Int16(contact.notificationSettings.daysBefore.first ?? 1)
+            entity.notificationHour = Int16(contact.notificationSettings.hour)
+            entity.notificationMinute = Int16(contact.notificationSettings.minute)
         }
-        entity.name = contact.name
-        entity.surname = contact.surname
-        entity.nickname = contact.nickname
-        entity.relationType = contact.relationType
-        entity.gender = contact.gender
-        if let day = contact.birthday?.day {
-            entity.birthdayDay = Int16(day)
-        }
-        if let month = contact.birthday?.month {
-            entity.birthdayMonth = Int16(month)
-        }
-        if let year = contact.birthday?.year {
-            entity.birthdayYear = Int16(year)
-        }
-        entity.emoji = contact.emoji
-        entity.imageData = contact.imageData
-        entity.occupation = contact.occupation
-        entity.hobbies = contact.hobbies
-        entity.leisure = contact.leisure
-        entity.additionalInfo = contact.additionalInfo
-        entity.phoneNumber = contact.phoneNumber
-        // notificationSettings
-        entity.notificationEnabled = contact.notificationSettings.enabled
-        entity.notificationDaysBefore = Int16(contact.notificationSettings.daysBefore.first ?? 1)
-        entity.notificationHour = Int16(contact.notificationSettings.hour)
-        entity.notificationMinute = Int16(contact.notificationSettings.minute)
-        try? context.save()
-        print("Контакт сохранён в CoreData: \(contact.name), id: \(contact.id)")
+        print("💾 Контакт отправлен на сохранение в CoreData: \(contact.name), id: \(contact.id)")
     }
     
     private func deleteContactFromCoreData(_ id: UUID) {
-        let fetchRequest: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
-        fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
-        if let result = try? context.fetch(fetchRequest), let entity = result.first {
-            context.delete(entity)
-            try? context.save()
-            print("Контакт удалён из CoreData: \(id)")
+        CoreDataManager.shared.performBackgroundTask(author: "deleteContact") { ctx in
+            let req: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+            req.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+            req.fetchLimit = 1
+            do {
+                if let entity = try ctx.fetch(req).first {
+                    ctx.delete(entity)
+                }
+            } catch {
+                assertionFailure("❌ Fetch for delete ContactEntity error: \(error)")
+            }
         }
+        print("🗑️ Контакт отправлен на удаление из CoreData: \(id)")
     }
 
     func daysUntilNextBirthday(from birthday: Birthday) -> Int {

@@ -14,19 +14,19 @@ struct ContactAvatarHeaderView: View {
                 ZStack {
                     Circle()
                         .fill(Color.white.opacity(0.001))
-                        .frame(width: 187, height: 187)
-                        .shadow(color: Color.black.opacity(0.15), radius: 15, x: 0, y: 10)
+                        .avatarFrame(size: CardStyle.Avatar.size * 2.5 + CardStyle.Avatar.size * 0.42)
+                        .avatarShadow()
                     if let imageData = contact.imageData, let uiImage = UIImage(data: imageData) {
                         Image(uiImage: pickedImage ?? uiImage)
                             .resizable()
                             .scaledToFill()
-                            .frame(width: 160, height: 160)
+                            .avatarFrame(size: CardStyle.Avatar.size * 2.5)
                             .clipped()
                             .clipShape(Circle())
                     } else if let emoji = pickedEmoji ?? contact.emoji {
                         Text(emoji)
-                            .font(.system(size: 80))
-                            .frame(width: 160, height: 160, alignment: .center)
+                            .font(.system(size: CardStyle.Avatar.size * 2.5 * 0.5))
+                            .avatarFrame(size: CardStyle.Avatar.size * 2.5)
                             .alignmentGuide(HorizontalAlignment.center) { d in d[HorizontalAlignment.center] }
                             .minimumScaleFactor(0.5)
                             .lineLimit(1)
@@ -39,13 +39,13 @@ struct ContactAvatarHeaderView: View {
                                             endPoint: .bottomTrailing
                                         )
                                     )
-                                    .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 4)
                             )
+                            .avatarShadow()
                     } else {
                         Text(String(contact.name.prefix(1)))
-                            .font(.system(size: 72, weight: .semibold))
+                            .font(.system(size: CardStyle.Avatar.size * 2.5 * 0.45, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: 160, height: 160, alignment: .center)
+                            .avatarFrame(size: CardStyle.Avatar.size * 2.5)
                             .alignmentGuide(HorizontalAlignment.center) { d in d[HorizontalAlignment.center] }
                             .minimumScaleFactor(0.5)
                             .lineLimit(1)
@@ -58,11 +58,11 @@ struct ContactAvatarHeaderView: View {
                                             endPoint: .bottomTrailing
                                         )
                                     )
-                                    .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 4)
                             )
+                            .avatarShadow()
                     }
                 }
-                .frame(width: 160, height: 160)
+                .avatarFrame(size: CardStyle.Avatar.size * 2.5)
             }
             .contentShape(Circle())
             .buttonStyle(.plain)
@@ -93,12 +93,12 @@ struct ContactAvatarView: View {
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: size, height: size)
+                    .avatarFrame(size: size)
                     .clipShape(Circle())
             } else if let emoji = contact.emoji {
                 Text(emoji)
                     .font(.system(size: size * 0.45))
-                    .frame(width: size, height: size)
+                    .avatarFrame(size: size)
                     .background(
                         Circle()
                             .fill(
@@ -108,7 +108,6 @@ struct ContactAvatarView: View {
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 4)
                     )
             } else {
                 let initial = String(contact.name.prefix(1)).uppercased()
@@ -121,15 +120,12 @@ struct ContactAvatarView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 4)
                     Text(initial)
                         .font(.system(size: size * 0.42, weight: .semibold))
                         .foregroundColor(.white)
                 }
-                .frame(width: size, height: size)
+                .avatarFrame(size: size)
             }
         }
-        .frame(width: size, height: size)
-        .shadow(color: .black.opacity(0.07), radius: 2, x: 0, y: 1)
     }
 }

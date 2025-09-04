@@ -1,5 +1,26 @@
 import Foundation
 
+// MARK: - Locale helper synced with in-app language
+private func appLocale() -> Locale {
+    if let code = UserDefaults.standard.string(forKey: "app.language.code") { // written by LanguageManager
+        return Locale(identifier: code)
+    }
+    if let code = Bundle.main.preferredLocalizations.first {
+        return Locale(identifier: code)
+    }
+    return Locale.current
+}
+
+// Resolve a .lproj bundle for the current in-app language, so String(localized:) obeys our picker
+private func appBundle() -> Bundle {
+    if let code = UserDefaults.standard.string(forKey: "app.language.code"),
+       let path = Bundle.main.path(forResource: code, ofType: "lproj"),
+       let bundle = Bundle(path: path) {
+        return bundle
+    }
+    return .main
+}
+
 func isValidBirthday(_ birthday: Birthday?) -> Bool {
     guard let b = birthday else { return false }
     return (b.day ?? 0) > 0 && (b.month ?? 0) > 0
@@ -29,32 +50,34 @@ func birthdayTitle(for contact: Contact) -> String {
 
 func birthdayDateDetails(for birthday: Birthday?) -> String {
     guard isValidBirthday(birthday) else {
-        return "Дата рождения не указана"
+        return String(localized: "contact.birthday.missing", defaultValue: "Дата рождения не указана", bundle: appBundle(), locale: appLocale())
     }
 
+    let locale = appLocale()
     let next = nextBirthdayDate(from: birthday!)
     let days = daysUntilNextBirthday(from: birthday!)
 
     let dateFormatter = DateFormatter()
-    dateFormatter.locale = Locale(identifier: "ru_RU")
-    dateFormatter.dateFormat = "d MMMM"
+    dateFormatter.locale = locale
+    dateFormatter.setLocalizedDateFormatFromTemplate("d MMMM") // localizes month names
     let dateText = dateFormatter.string(from: next)
 
     let weekdayFormatter = DateFormatter()
-    weekdayFormatter.locale = Locale(identifier: "ru_RU")
-    weekdayFormatter.dateFormat = "EEEE"
-    let weekday = weekdayFormatter.string(from: next).capitalized
+    weekdayFormatter.locale = locale
+    weekdayFormatter.setLocalizedDateFormatFromTemplate("EEEE")
+    let weekday = weekdayFormatter.string(from: next).capitalized(with: locale)
 
     let prefix: String
     if days == 0 {
-        prefix = "Сегодня"
+        prefix = String(localized: "date.today", defaultValue: "Сегодня", bundle: appBundle(), locale: appLocale())
     } else if days == 1 {
-        prefix = "Завтра"
+        prefix = String(localized: "date.tomorrow", defaultValue: "Завтра", bundle: appBundle(), locale: appLocale())
     } else {
-        prefix = "Через \(days) \(daysSuffix(for: days))"
+        let unit = daysSuffix(for: days) // locale-aware
+        prefix = String.localizedStringWithFormat(String(localized: "date.in_days", defaultValue: "Через %1$d %2$@", bundle: appBundle(), locale: appLocale()), days, unit)
     }
 
-    // Две строки: первая — день, вторая — день недели (жирным стилем вывод можно сделать уже в UI)
+    // First line — day prefix and date, second line — weekday (UI can style bold as needed)
     return "\(prefix) · \(dateText)\n\(weekday)"
 }
 
@@ -67,28 +90,27 @@ func ageOnNextBirthday(contact: Contact) -> Int {
 }
 
 func ageAnniversarySuffix(for age: Int) -> String {
-    let lastTwo = age % 100
-    let last = age % 10
-    if lastTwo >= 11 && lastTwo <= 14 {
-        return "-летие"
-    }
-    switch last {
-    case 1: return "-летие"
-    case 2, 3, 4: return "-летие"
-    default: return "-летие"
-    }
+    // Russian uses "-летие"; English typically omits the suffix in titles (e.g., ", 30").
+    let id = appLocale().identifier
+    if id.hasPrefix("ru") { return "-летие" }
+    return ""
 }
 
 func daysSuffix(for days: Int) -> String {
-    let lastTwo = days % 100
-    let last = days % 10
-    if lastTwo >= 11 && lastTwo <= 14 {
-        return "дней"
-    }
-    switch last {
-    case 1: return "день"
-    case 2, 3, 4: return "дня"
-    default: return "дней"
+    let locale = appLocale()
+    let id = locale.identifier
+    if id.hasPrefix("ru") {
+        let lastTwo = days % 100
+        let last = days % 10
+        if lastTwo >= 11 && lastTwo <= 14 { return "дней" }
+        switch last {
+        case 1: return "день"
+        case 2, 3, 4: return "дня"
+        default: return "дней"
+        }
+    } else {
+        // English
+        return days == 1 ? "day" : "days"
     }
 }
 
@@ -121,17 +143,17 @@ func daysUntilNextBirthday(from birthday: Birthday) -> Int {
 
 func dateStringRu(_ date: Date) -> String {
     let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "ru_RU")
-    formatter.dateFormat = "d MMMM"
+    formatter.locale = appLocale()
+    formatter.setLocalizedDateFormatFromTemplate("d MMMM")
     return formatter.string(from: date)
 }
 
 // MARK: - Форматирование даты рождения (для ContactDetailView и других вьюшек)
 
 func formattedBirthdayDetails(for birthday: Birthday?) -> String {
-    guard let birthday = birthday else { return "Дата рождения не указана" }
+    guard let birthday = birthday else { return String(localized: "contact.birthday.missing", defaultValue: "Дата рождения не указана", bundle: appBundle(), locale: appLocale()) }
     if birthday.day == 0 && birthday.month == 0 {
-        return "Дата рождения не указана"
+        return String(localized: "contact.birthday.missing", defaultValue: "Дата рождения не указана", bundle: appBundle(), locale: appLocale())
     }
     let calendar = Calendar.current
     var components = DateComponents()
@@ -139,25 +161,27 @@ func formattedBirthdayDetails(for birthday: Birthday?) -> String {
     components.month = birthday.month
     components.year = birthday.year ?? 1900
     guard let date = calendar.date(from: components) else {
-        return "Дата рождения не указана"
+        return String(localized: "contact.birthday.missing", defaultValue: "Дата рождения не указана", bundle: appBundle(), locale: appLocale())
     }
 
     let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "ru_RU")
+    formatter.locale = appLocale()
 
-    if birthday.year != nil {
-        formatter.dateFormat = "d MMMM yyyy"
+    let label = String(localized: "birthday.label", defaultValue: "Дата рождения", bundle: appBundle(), locale: appLocale())
+
+    if let _ = birthday.year {
+        formatter.setLocalizedDateFormatFromTemplate("d MMMM yyyy")
         let dateString = formatter.string(from: date)
         let age = calculateAge(from: birthday)
         if age < 0 {
-            return "Дата рождения: \(dateString)"
+            return "\(label): \(dateString)"
         } else {
-            return "Дата рождения: \(dateString) (\(age) \(ageSuffix(for: age)))"
+            return "\(label): \(dateString) (\(age) \(ageSuffix(for: age)))"
         }
     } else {
-        formatter.dateFormat = "d MMMM"
+        formatter.setLocalizedDateFormatFromTemplate("d MMMM")
         let dateString = formatter.string(from: date)
-        return "Дата рождения: \(dateString)"
+        return "\(label): \(dateString)"
     }
 }
 
@@ -176,14 +200,17 @@ func calculateAge(from birthday: Birthday) -> Int {
 }
 
 func ageSuffix(for age: Int) -> String {
-    let lastDigit = age % 10
-    let lastTwo = age % 100
-    if lastTwo >= 11 && lastTwo <= 14 {
-        return "лет"
-    }
-    switch lastDigit {
-    case 1: return "год"
-    case 2, 3, 4: return "года"
-    default: return "лет"
+    let id = appLocale().identifier
+    if id.hasPrefix("ru") {
+        let lastDigit = age % 10
+        let lastTwo = age % 100
+        if lastTwo >= 11 && lastTwo <= 14 { return "лет" }
+        switch lastDigit {
+        case 1: return "год"
+        case 2, 3, 4: return "года"
+        default: return "лет"
+        }
+    } else {
+        return age == 1 ? "year" : "years"
     }
 }

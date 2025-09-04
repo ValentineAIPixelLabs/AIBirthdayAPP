@@ -1,251 +1,400 @@
-//
-//  HolidayCongratsTextView.swift
-//  AIBirthdayReminderApp
-//
-//  Created by Александр Дротенко on 19.07.2025.
-//
-
 import SwiftUI
+import Foundation
 
-struct HolidayCongratsTextView: View {
+// MARK: - Localization helpers (file-local)
+private func appLocale() -> Locale {
+    if let code = UserDefaults.standard.string(forKey: "app.language.code") { return Locale(identifier: code) }
+    if let code = Bundle.main.preferredLocalizations.first { return Locale(identifier: code) }
+    return .current
+}
+private func appBundle() -> Bundle {
+    if let code = UserDefaults.standard.string(forKey: "app.language.code"),
+       let path = Bundle.main.path(forResource: code, ofType: "lproj"),
+       let bundle = Bundle(path: path) { return bundle }
+    return .main
+}
+
+@MainActor struct HolidayCongratsTextView: View {
     let holiday: Holiday
     @ObservedObject var vm: ContactsViewModel
+    @EnvironmentObject var store: StoreKitManager
 
-    // История поздравлений по празднику (можно использовать UserDefaults или CoreData, как в ContactCongratsView)
-    @State private var history: [String] = [] // замените тип, если у вас другая модель поздравления
+    // История поздравлений по празднику
+    @State private var history: [CongratsHistoryItem] = []
+
+    // UI state
     @State private var showCongratsActionSheet = false
     @State private var showContactPicker = false
     @State private var showShareSheet = false
     @State private var selectedCongrats: String?
     @State private var isGenerating = false
     @State private var showCongratsPopup = false
+    @State private var showStore = false
+    @State private var isRegenerating = false
+
 
     @Environment(\.dismiss) private var dismiss
+    // работает
 
     var body: some View {
         ZStack {
-            AppBackground()
-                .ignoresSafeArea()
+            AppBackground().ignoresSafeArea()
 
             VStack(spacing: 0) {
-                topBar
-
                 ScrollView {
                     VStack(spacing: 20) {
-                        holidayCard
 
-                        generateButton
 
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Поздравления")
-                                .font(.headline)
-                                .bold()
-                                .padding(.top, 16)
-
-                            if history.isEmpty {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color.white.opacity(0.3))
-                                    .frame(minHeight: 46)
-                                    .overlay(
-                                        Text("Нет поздравлений")
-                                            .foregroundColor(Color.gray)
-                                            .font(.subheadline)
-                                    )
-                                    .padding(.bottom, 16)
-                            } else {
-                                ForEach(history, id: \.self) { congrats in
-                                    Button(action: {
-                                        selectedCongrats = congrats
-                                        showCongratsPopup = true
-                                    }) {
-                                        Text(congrats)
-                                            .font(.body)
-                                            .foregroundColor(.primary)
-                                            .padding()
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .background(
-                                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                                    .fill(Color.white.opacity(0.3))
-                                            )
-                                    }
-                                    .contextMenu {
-                                        Button {
-                                            UIPasteboard.general.string = congrats
-                                        } label: {
-                                            Label("Копировать", systemImage: "doc.on.doc")
-                                        }
-                                        Button {
-                                            selectedCongrats = congrats
-                                            showShareSheet = true
-                                        } label: {
-                                            Label("Поделиться", systemImage: "square.and.arrow.up")
-                                        }
-                                        Button(role: .destructive) {
-                                            CardHistoryStore.deleteCongrats(congrats, for: holiday.id.uuidString)
-                                            history = CardHistoryStore.loadCongratsHistory(for: holiday.id.uuidString)
-                                        } label: {
-                                            Label("Удалить", systemImage: "trash")
-                                        }
-                                    }
+                        // История поздравлений — стиль как в ContactCongratsView
+                        HolidayCongratsHistorySection(
+                            history: history,
+                            onDelete: { item in
+                                DispatchQueue.main.async {
+                                    CongratsHistoryManager.deleteCongrats(item.id)
+                                    history = CongratsHistoryManager.getCongrats(forHoliday: holiday.id)
                                 }
+                            },
+                            onShowPopup: { message in
+                                DispatchQueue.main.async {
+                                    selectedCongrats = message
+                                    showCongratsPopup = true
+                                }
+                            }
+                        )
+                        .padding(.horizontal)
+                        .padding(.bottom, 16)
+                    }
+                    .padding(.top, 8)
+                    .padding(.bottom, 16)
+                }
+            }
+            // Индикатор генерации
+            .overlay(
+                Group {
+                    if isGenerating {
+                        ZStack {
+                            Color.black.opacity(0.28).ignoresSafeArea()
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                                .controlSize(.large)
+                                .tint(.white)
+                                .scaleEffect(1.5)
+                        }
+                    }
+                }
+            )
+            .onAppear {
+                history = CongratsHistoryManager.getCongrats(forHoliday: holiday.id)
+                Task {
+                    await store.fetchServerTokens()
+                    await store.refreshSubscriptionStatus()
+                }
+            }
+
+            // Полноэкранный попап результата — как в ContactCongratsView
+            if showCongratsPopup, let selected = selectedCongrats {
+                Color.clear
+                    .fullScreenCover(isPresented: Binding(
+                        get: { showCongratsPopup },
+                        set: { newValue in
+                            DispatchQueue.main.async { showCongratsPopup = newValue }
+                        }
+                    )) {
+                        ZStack {
+                            AppBackground().ignoresSafeArea()
+                            CongratsResultPopup(
+                                message: selected,
+                                onCopy: { UIPasteboard.general.string = selected },
+                                onShare: {
+                                    // Закрываем попап и вызываем системный ShareSheet
+                                    showCongratsPopup = false
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                        showShareSheet = true
+                                    }
+                                },
+                                onRegenerate: {
+                                    isRegenerating = true
+                                    ChatGPTService.shared.generateHolidayGreeting(for: holiday.title) { result in
+                                        DispatchQueue.main.async {
+                                            isRegenerating = false
+                                            switch result {
+                                            case .success(let text):
+                                                let item = CongratsHistoryItem(id: UUID(), date: Date(), message: text)
+                                                history.insert(item, at: 0)
+                                                CongratsHistoryManager.addCongratsForHoliday(item: item, holidayId: holiday.id)
+                                                selectedCongrats = text
+                                                Task { await store.fetchServerTokens() }
+                                            case .failure(let error):
+                                                let fmt1 = appBundle().localizedString(forKey: "error.generation_prefix", value: "Ошибка генерации: %@", table: "Localizable")
+                                                selectedCongrats = String(format: fmt1, error.localizedDescription)
+                                            }
+                                        }
+                                    }
+                                },
+                                onClose: { showCongratsPopup = false },
+                                regenCost: 1
+                            )
+                            .transition(.opacity)
+                            if isRegenerating {
+                                Color.black.opacity(0.28).ignoresSafeArea()
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                    .controlSize(.large)
+                                    .tint(.white)
+                                    .scaleEffect(1.5)
                             }
                         }
                     }
-                    .padding(.horizontal)
-                }
             }
-            .onAppear {
-                history = CardHistoryStore.loadCongratsHistory(for: holiday.id.uuidString)
-            }
-            congratsPopup
         }
-        .navigationBarHidden(true)
+        .navigationTitle(holiday.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 0) {
+                Button(action: { showCongratsActionSheet = true }) {
+                    HStack(spacing: 10) {
+                        Spacer()
+                        Text(appBundle().localizedString(forKey: "congrats.generate",
+                                                         value: "Сгенерировать поздравление",
+                                                         table: "Localizable"))
+                            .font(.subheadline.weight(.bold))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                        HStack(spacing: 3) {
+                            Image(systemName: "bolt.fill")
+                                .foregroundColor(.yellow)
+                                .font(.system(size: 15, weight: .semibold))
+                            Text("1")
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.white.opacity(0.18)))
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppButtonStyle.Congratulate.cornerRadius, style: .continuous)
+                            .fill(AppButtonStyle.primaryFill())
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AppButtonStyle.Congratulate.cornerRadius, style: .continuous)
+                                    .fill(AppButtonStyle.primaryGloss())
+                            )
+                            .shadow(color: AppButtonStyle.Congratulate.shadow, radius: AppButtonStyle.Congratulate.shadowRadius, y: 2)
+                    )
+                }
+                .buttonStyle(.plain)
+                .opacity(isGenerating ? 0.6 : 1)
+                .disabled(isGenerating)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showStore = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("\(store.purchasedTokenCount)")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(.tint)
+                }
+                .tint(Color(UIColor.systemBlue))
+                .buttonStyle(.plain)
+                .accessibilityLabel(appBundle().localizedString(forKey: "store.tokens.balance",
+                                                                value: "Баланс токенов",
+                                                                table: "Localizable"))
+            }
+        }
+        .sheet(isPresented: $showShareSheet) {
+            if let selected = selectedCongrats {
+                ActivityViewController(activityItems: [selected])
+            }
+        }
+        .sheet(isPresented: $showStore) {
+            StoreView()
+        }
         .confirmationDialog(
-            "Выберите тип поздравления",
+            appBundle().localizedString(forKey: "congrats.sheet.title",
+                                        value: "Выберите тип поздравления",
+                                        table: "Localizable"),
             isPresented: $showCongratsActionSheet,
             titleVisibility: .visible
         ) {
-            Button("Общее поздравление") {
+            Button(appBundle().localizedString(forKey: "congrats.generic",
+                                               value: "Общее поздравление",
+                                               table: "Localizable")) {
                 generateCongrats(for: nil)
             }
-            Button("Поздравить конкретного человека…") {
+            Button(appBundle().localizedString(forKey: "congrats.for_person",
+                                               value: "Поздравить конкретного человека…",
+                                               table: "Localizable")) {
                 showContactPicker = true
             }
-            Button("Отмена", role: .cancel) {}
+            Button(appBundle().localizedString(forKey: "common.cancel",
+                                               value: "Отмена",
+                                               table: "Localizable"), role: .cancel) {}
         }
         .sheet(isPresented: $showContactPicker) {
             ContactSelectSheetView(vm: vm) { contact in
                 generateCongrats(for: contact)
             }
         }
-        .sheet(isPresented: $showShareSheet) {
-            if let selectedCongrats = selectedCongrats {
-                ActivityViewController(activityItems: [selectedCongrats])
-            }
-        }
     }
 
-    // Popup поздравления (аналогично ContactCongratsView)
-    @ViewBuilder
-    private var congratsPopup: some View {
-        if showCongratsPopup, let selectedCongrats = selectedCongrats {
-            CongratsResultPopup(
-                message: selectedCongrats,
-                onCopy: {
-                    UIPasteboard.general.string = selectedCongrats
-                },
-                onShare: {
-                    showCongratsPopup = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        showShareSheet = true
-                    }
-                },
-                onClose: {
-                    showCongratsPopup = false
-                }
-            )
-            .transition(.opacity)
-            .zIndex(100)
-        }
-    }
 
-    // MARK: - Top Bar
-    private var topBar: some View {
-        HStack(spacing: 16) {
-            Button(action: { dismiss() }) {
-                Image(systemName: "chevron.left")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: AppButtonStyle.Circular.iconSize, height: AppButtonStyle.Circular.iconSize)
-                    .foregroundColor(AppButtonStyle.Circular.iconColor)
-                    .frame(width: AppButtonStyle.Circular.diameter, height: AppButtonStyle.Circular.diameter)
-                    .background(AppButtonStyle.Circular.backgroundColor)
-                    .clipShape(Circle())
-                    .shadow(color: AppButtonStyle.Circular.shadow, radius: AppButtonStyle.Circular.shadowRadius)
-            }
-            Spacer()
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 12)
-    }
-
-    // MARK: - Holiday Card
-    private var holidayCard: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Праздник: \(holiday.title)")
-                .font(.headline)
-                .bold()
-                .foregroundColor(.primary)
-
-            Text(holiday.date.formatted(date: .long, time: .omitted))
-                .font(.subheadline)
-                .foregroundColor(.gray)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.3))
-        )
-    }
-
-    // MARK: - Generate Button
-    private var generateButton: some View {
-        Button(action: { showCongratsActionSheet = true }) {
-            HStack(spacing: 12) {
-                Image(systemName: "sparkles")
-                    .font(.title3)
-                Text("Сгенерировать поздравление")
-                    .font(.headline.bold())
-            }
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 54)
-            .background(isGenerating ? Color.gray : Color.blue)
-            .cornerRadius(14)
-        }
-        .disabled(isGenerating)
-    }
-
-    // MARK: - Генерация поздравления
+    // Генерация поздравления (логика сохранения — как в исходном файле)
     private func generateCongrats(for contact: Contact?) {
         isGenerating = true
-        let apiKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
+
+        let onSuccess: (String) -> Void = { congrats in
+            let holidayItem = CongratsHistoryItem(id: UUID(), date: Date(), message: congrats)
+            // Сразу обновляем UI, как в ContactCongratsView
+            history.insert(holidayItem, at: 0)
+            CongratsHistoryManager.addCongratsForHoliday(item: holidayItem, holidayId: holiday.id)
+
+            if let contact = contact {
+                let contactItem = CongratsHistoryItem(id: UUID(), date: Date(), message: congrats)
+                CongratsHistoryManager.addCongrats(item: contactItem, for: contact.id)
+            }
+
+            selectedCongrats = congrats
+            showCongratsPopup = true
+        }
+
+        let onFailure: (Error) -> Void = { error in
+            let fmt2 = appBundle().localizedString(forKey: "error.generation_prefix", value: "Ошибка генерации: %@", table: "Localizable")
+            selectedCongrats = String(format: fmt2, error.localizedDescription)
+            showCongratsPopup = true
+        }
 
         if let contact = contact {
-            // Персонализированное поздравление
-            ChatGPTService.shared.generateHolidayGreeting(for: contact, holidayTitle: holiday.title, apiKey: apiKey) { result in
+            ChatGPTService.shared.generateHolidayGreeting(for: contact, holidayTitle: holiday.title) { result in
                 DispatchQueue.main.async {
                     isGenerating = false
                     switch result {
-                    case .success(let congrats):
-                        CardHistoryStore.addCongrats(congrats, for: holiday.id.uuidString)
-                        history = CardHistoryStore.loadCongratsHistory(for: holiday.id.uuidString)
-                        selectedCongrats = congrats
-                        showCongratsPopup = true
-                    case .failure(let error):
-                        selectedCongrats = "Ошибка генерации: \(error.localizedDescription)"
-                        showCongratsPopup = true
+                    case .success(let congrats): onSuccess(congrats)
+                    case .failure(let err): onFailure(err)
                     }
                 }
             }
         } else {
-            // Общее поздравление
-            ChatGPTService.shared.generateHolidayGreeting(for: holiday.title, apiKey: apiKey) { result in
+            ChatGPTService.shared.generateHolidayGreeting(for: holiday.title) { result in
                 DispatchQueue.main.async {
                     isGenerating = false
                     switch result {
-                    case .success(let congrats):
-                        CardHistoryStore.addCongrats(congrats, for: holiday.id.uuidString)
-                        history = CardHistoryStore.loadCongratsHistory(for: holiday.id.uuidString)
-                        selectedCongrats = congrats
-                        showCongratsPopup = true
-                    case .failure(let error):
-                        selectedCongrats = "Ошибка генерации: \(error.localizedDescription)"
-                        showCongratsPopup = true
+                    case .success(let congrats): onSuccess(congrats)
+                    case .failure(let err): onFailure(err)
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - История поздравлений (визуально как в ContactCongratsView)
+@MainActor private struct HolidayCongratsHistorySection: View {
+    let history: [CongratsHistoryItem]
+    let onDelete: (CongratsHistoryItem) -> Void
+    let onShowPopup: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(appBundle().localizedString(forKey: "history.congrats.title",
+                                             value: "История поздравлений",
+                                             table: "Localizable"))
+                .font(.headline)
+                .padding(.bottom, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if history.isEmpty {
+                Text(appBundle().localizedString(forKey: "history.congrats.empty",
+                                                 value: "Нет поздравлений",
+                                                 table: "Localizable"))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(history) { item in
+                        HolidayCongratsHistoryItemView(
+                            item: item,
+                            onDelete: { onDelete(item) },
+                            onShowPopup: { onShowPopup(item.message) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@MainActor private struct HolidayCongratsHistoryItemView: View {
+    let item: CongratsHistoryItem
+    let onDelete: () -> Void
+    let onShowPopup: () -> Void
+    @State private var isShareSheetPresented = false
+    @State private var sharingText: String? = nil
+
+    private let maxPreviewChars = 140
+    private var previewText: String {
+        let trimmed = item.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.count > maxPreviewChars ? String(trimmed.prefix(maxPreviewChars)) + "…" : trimmed
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(previewText)
+                .font(.body)
+                .foregroundColor(.primary)
+            Text(item.date, style: .date)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onTapGesture { onShowPopup() }
+        .background(
+            RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
+                .fill(CardStyle.backgroundColor)
+                .shadow(color: CardStyle.shadowColor, radius: CardStyle.shadowRadius, y: CardStyle.shadowYOffset)
+                .overlay(
+                    RoundedRectangle(cornerRadius: CardStyle.cornerRadius, style: .continuous)
+                        .stroke(CardStyle.borderColor, lineWidth: 0.7)
+                )
+        )
+        .contextMenu {
+            Button {
+                DispatchQueue.main.async {
+                    UIPasteboard.general.string = item.message
+                }
+            } label: {
+                Label(appBundle().localizedString(forKey: "common.copy", value: "Копировать", table: "Localizable"), systemImage: "doc.on.doc")
+            }
+            Button {
+                DispatchQueue.main.async {
+                    sharingText = item.message
+                    isShareSheetPresented = true
+                }
+            } label: {
+                Label(appBundle().localizedString(forKey: "common.share", value: "Поделиться", table: "Localizable"), systemImage: "square.and.arrow.up")
+            }
+            Button(role: .destructive) {
+                DispatchQueue.main.async {
+                    onDelete()
+                }
+            } label: {
+                Label(appBundle().localizedString(forKey: "common.delete", value: "Удалить", table: "Localizable"), systemImage: "trash")
+            }
+        }
+        .sheet(isPresented: $isShareSheetPresented) {
+            if let sharingText { ActivityViewController(activityItems: [sharingText]) }
         }
     }
 }
