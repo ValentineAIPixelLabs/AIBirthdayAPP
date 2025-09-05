@@ -14,7 +14,7 @@ final class CoreDataManager {
     var context: NSManagedObjectContext { viewContext }
 
     private init() {
-        let modelName = "Model" // must match .xcdatamodeld
+        let modelName = "Model3" // must match .xcdatamodeld
 
         // 1) Load a single compiled model from the app bundle (.momd), avoiding merged models.
         guard
@@ -108,7 +108,7 @@ final class CoreDataManager {
                 description.url = storeURL
 
                 // Force specific CloudKit container (must match entitlements)
-                let containerID = "iCloud.com.ValentinStancov.AIBirthdayReminderApp"
+                let containerID = "iCloud.com.ValentinStancov.AIBirthdayReminderApp.v2"
                 description.cloudKitContainerOptions = NSPersistentCloudKitContainerOptions(containerIdentifier: containerID)
                 print("🔗 CloudKit container ID (forced): \(containerID)")
 
@@ -235,5 +235,64 @@ final class CoreDataManager {
                 }
             }
         }
+    }
+    
+    /// Полная очистка CloudKit и локального стора (для отладки)
+    /// ⚠️ ВРЕМЕННАЯ ФУНКЦИЯ - УДАЛИТЬ ПОСЛЕ РЕШЕНИЯ ПРОБЛЕМЫ С NSCKImportOperation
+    func resetCloudKitAndLocalStore() {
+        print("🧨 Начинаем полную очистку CloudKit и локального стора...")
+        
+        // 1. Удаляем все локальные файлы
+        let fm = FileManager.default
+        let appSupport = try! fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let storeURL = appSupport.appendingPathComponent("Model.sqlite")
+        let sidecars = [storeURL, storeURL.appendingPathExtension("wal"), storeURL.appendingPathExtension("shm")]
+        
+        for fileURL in sidecars {
+            if fm.fileExists(atPath: fileURL.path) {
+                do {
+                    try fm.removeItem(at: fileURL)
+                    print("✅ Удален файл: \(fileURL.lastPathComponent)")
+                } catch {
+                    print("❌ Ошибка удаления файла \(fileURL.lastPathComponent): \(error)")
+                }
+            }
+        }
+        
+        // 2. Сбрасываем CloudKit схему
+        if let ck = persistentContainer as? NSPersistentCloudKitContainer {
+            do {
+                try ck.initializeCloudKitSchema(options: [.printSchema])
+                print("✅ CloudKit схема сброшена")
+            } catch {
+                print("❌ Ошибка сброса CloudKit схемы: \(error)")
+            }
+        }
+        
+        // 3. Перезагружаем стор
+        persistentContainer.persistentStoreCoordinator.performAndWait {
+            for store in persistentContainer.persistentStoreCoordinator.persistentStores {
+                do {
+                    try persistentContainer.persistentStoreCoordinator.remove(store)
+                    print("✅ Стор удален из координатора")
+                } catch {
+                    print("❌ Ошибка удаления стора: \(error)")
+                }
+            }
+        }
+        
+        // 4. Загружаем стор заново
+        let semaphore = DispatchSemaphore(value: 0)
+        persistentContainer.loadPersistentStores { _, error in
+            if let error = error {
+                print("❌ Ошибка перезагрузки стора: \(error)")
+            } else {
+                print("✅ Стор успешно перезагружен")
+            }
+            semaphore.signal()
+        }
+        semaphore.wait()
+        
+        print("🎉 Очистка завершена!")
     }
 }

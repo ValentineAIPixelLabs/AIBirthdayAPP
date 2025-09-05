@@ -18,6 +18,7 @@ import ContactsUI
     @State private var authCoverSignedIn = false
     @State private var showSignOutAlert = false
     @State private var suppressAuthAfterSignOut = false
+    @State private var showResetAlert = false // ⚠️ ВРЕМЕННО - УДАЛИТЬ ПОСЛЕ РЕШЕНИЯ ПРОБЛЕМЫ С NSCKImportOperation
 
     var body: some View {
         NavigationStack {
@@ -105,6 +106,18 @@ import ContactsUI
                         }
                         .foregroundColor(.primary)
                     }
+                }
+                
+                // ⚠️ ВРЕМЕННАЯ СЕКЦИЯ - УДАЛИТЬ ПОСЛЕ РЕШЕНИЯ ПРОБЛЕМЫ С NSCKImportOperation
+                Section(header: Text("Debug")) {
+                    Button {
+                        showResetAlert = true
+                    } label: {
+                        Label("Reset CloudKit & Local Data", systemImage: "trash")
+                            .font(.headline)
+                            .padding(.vertical, 8)
+                    }
+                    .foregroundColor(.red)
                 }
             }
             .listStyle(.insetGrouped)
@@ -226,6 +239,18 @@ import ContactsUI
                     showAuthScreen = false
                     suppressAuthAfterSignOut = true
                 }
+            }
+            // ⚠️ ВРЕМЕННЫЙ АЛЕРТ - УДАЛИТЬ ПОСЛЕ РЕШЕНИЯ ПРОБЛЕМЫ С NSCKImportOperation
+            .alert(
+                "Reset CloudKit & Local Data",
+                isPresented: $showResetAlert
+            ) {
+                Button("Cancel", role: .cancel) { }
+                Button("Reset", role: .destructive) {
+                    CoreDataManager.shared.resetCloudKitAndLocalStore()
+                }
+            } message: {
+                Text("This will completely reset all CloudKit and local data. This action cannot be undone.")
             }
         }
     }
