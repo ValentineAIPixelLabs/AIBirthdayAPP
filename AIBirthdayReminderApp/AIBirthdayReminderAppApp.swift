@@ -101,9 +101,6 @@ struct AIBirthdayReminderAppApp: App {
                 .task {
                     store.startTransactionListener()
                     await store.loadProducts()
-                    #if DEBUG
-                    debugPrintModelInfo()
-                    #endif
                 }
         }
     }

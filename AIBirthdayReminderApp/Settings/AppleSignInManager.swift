@@ -39,12 +39,12 @@ import UIKit
     }
 
     // MARK: - Session helpers
-    func signOut() {
+    func signOut() async {
         UserDefaults.standard.removeObject(forKey: appleIdKey)
         try? KeychainStore.delete(jwtTokenKey)
         
         // Переключаем CoreDataManager на локальный режим
-        CoreDataManager.shared.disableCloudKit()
+        await CoreDataManager.shared.disableCloudKit()
         print("✅ Переключение на локальный режим после выхода")
         
         // Уведомляем о смене пользователя

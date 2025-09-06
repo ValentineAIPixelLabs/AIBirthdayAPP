@@ -42,13 +42,43 @@ final class CoreDataManager {
 
 
     private init() {
-        // Инициализируем сразу в локальном режиме
-        persistentContainer = Self.createLocalContainer()
+        // Всегда быстро поднимаем локальный контейнер для мгновенного UI
+        let localContainer = Self.makeLocalContainer()
+        persistentContainer = localContainer
         currentMode = .local
-        print("🏠 CoreDataManager инициализирован в локальном режиме")
-        
-        // Проверяем состояние входа при запуске
-        checkSignInStateOnLaunch()
+        // logging suppressed
+
+        Task { @MainActor in
+            // 1) Загружаем локальный стор (не блокируя UI)
+            do {
+                try await Self.configureAndLoadLocalContainerAsync(localContainer)
+                // logging suppressed
+                NotificationCenter.default.post(name: .storageModeSwitched, object: StorageMode.local)
+            } catch {
+                fatalError("❌ Ошибка асинхронной загрузки локального стора: \(error)")
+            }
+
+            // 2) Если пользователь уже авторизован и iCloud доступен — включаем CloudKit в фоне
+            guard isUserSignedIn else { return }
+            let status: CKAccountStatus
+            do {
+                status = try await CKContainer.default().accountStatus()
+            } catch {
+                // logging suppressed
+                return
+            }
+            guard status == .available else {
+                // logging suppressed
+                return
+            }
+
+            // 3) Мягкое переключение: миграция уникальных локальных данных → CloudKit и переключение контейнера
+            do {
+                try await enableCloudKit()
+            } catch {
+                print("❌ Ошибка активации CloudKit после старта: \(error)")
+            }
+        }
         // Observe iCloud account status changes and react accordingly
         NotificationCenter.default.addObserver(forName: .CKAccountChanged, object: nil, queue: .main) { [weak self] _ in
             guard let self = self else { return }
@@ -96,43 +126,27 @@ final class CoreDataManager {
                 #if DEBUG
                 print("⚠️ iCloud unavailable (status=\(status.rawValue)); switching to local mode…")
                 #endif
-                disableCloudKit()
+                await disableCloudKit()
             }
         }
     }
     
-    /// Проверяет состояние входа при запуске приложения
-    private func checkSignInStateOnLaunch() {
-        if isUserSignedIn {
-            print("✅ Пользователь уже вошел в аккаунт, активируем CloudKit...")
-            Task {
-                do {
-                    try await enableCloudKit()
-                    print("✅ CloudKit активирован при запуске (пользователь авторизован)")
-                } catch {
-                    print("❌ Ошибка активации CloudKit при запуске: \(error)")
-                }
-            }
-        } else {
-            print("🏠 Пользователь не вошел в аккаунт, работаем в локальном режиме")
-        }
-    }
+    /// Проверяет состояние входа при запуске приложения (больше не вызывается из init; логика старта перенесена в init)
+    private func checkSignInStateOnLaunch() { /* deprecated path */ }
     
     // MARK: - Container Creation
     
-    private static func createLocalContainer() -> NSPersistentContainer {
+    private static func makeLocalContainer() -> NSPersistentContainer {
         let container = NSPersistentContainer(name: modelName, managedObjectModel: managedModel)
-        configureLocalContainer(container)
         return container
     }
 
-    private static func createCloudKitContainer() -> NSPersistentCloudKitContainer {
+    private static func makeCloudKitContainer() -> NSPersistentCloudKitContainer {
         // Проверяем, что пользователь вошел в аккаунт
         guard CoreDataManager.shared.isUserSignedIn else {
             fatalError("❌ CloudKit контейнер не может быть создан без входа в аккаунт")
         }
         let container = NSPersistentCloudKitContainer(name: modelName, managedObjectModel: managedModel)
-        configureCloudKitContainer(container)
         return container
     }
     
@@ -146,11 +160,7 @@ final class CoreDataManager {
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
         }
-        
-        loadStoresOrResetOnce(container)
-        configureViewContext(container.viewContext)
-        
-        print("🏠 Локальный контейнер настроен")
+        // logging suppressed
     }
     
     private static func configureCloudKitContainer(_ container: NSPersistentCloudKitContainer) {
@@ -168,24 +178,75 @@ final class CoreDataManager {
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
         }
-        
-        loadStoresOrResetOnce(container)
-        configureViewContext(container.viewContext)
-        
-        #if DEBUG
-        #if !targetEnvironment(simulator)
-        do {
-            try container.initializeCloudKitSchema(options: [])
-            print("☁️ CloudKit dev schema initialized")
-        } catch {
-            print("⚠️ initializeCloudKitSchema failed: \(error)")
+        // logging suppressed
+    }
+
+    // Async configure + load helpers
+    private static func loadStoresOrResetOnceAsync(_ container: NSPersistentContainer) async throws {
+        func loadOnce() async throws {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                container.loadPersistentStores { _, error in
+                    if let error { continuation.resume(throwing: error) } else { continuation.resume(returning: ()) }
+                }
+            }
         }
-        #else
-        print("ℹ️ Skipping initializeCloudKitSchema on Simulator")
-        #endif
-        #endif
-        
-        print("☁️ CloudKit контейнер настроен")
+        do {
+            try await loadOnce()
+        } catch {
+            if isIncompatibilityError(error) {
+                #if DEBUG
+                print("⚠️ loadPersistentStores incompatibility: \(error). Deleting store and retrying once…")
+                #endif
+                // Удаляем файлы стора (sqlite + sidecars)
+                let storeURL: URL = (container is NSPersistentCloudKitContainer) ? getCloudKitStoreURL() : getStoreURL()
+                let fm = FileManager.default
+                let sidecars = [storeURL, storeURL.appendingPathExtension("wal"), storeURL.appendingPathExtension("shm")]
+                for file in sidecars { try? fm.removeItem(at: file) }
+                try await loadOnce()
+            } else {
+                throw error
+            }
+        }
+    }
+
+    private static func configureAndLoadLocalContainerAsync(_ container: NSPersistentContainer) async throws {
+        configureLocalContainer(container)
+        try await loadStoresOrResetOnceAsync(container)
+        configureViewContext(container.viewContext)
+        // logging suppressed
+    }
+
+    private static func configureAndLoadCloudKitContainerAsync(_ container: NSPersistentCloudKitContainer) async throws {
+        configureCloudKitContainer(container)
+        try await loadStoresOrResetOnceAsync(container)
+        configureViewContext(container.viewContext)
+        // Dev schema initialization отключена для ускорения UX старта. Используйте CloudKit Dashboard для схемы.
+        // logging suppressed
+    }
+
+    /// Полное очищение всех данных в указанном контейнере
+    private static func clearAllData(in container: NSPersistentContainer) {
+        let ctx = container.newBackgroundContext()
+        ctx.performAndWait {
+            let entityNames = container.managedObjectModel.entities.compactMap { $0.name }
+            for name in entityNames {
+                let fetch = NSFetchRequest<NSFetchRequestResult>(entityName: name)
+                let request = NSBatchDeleteRequest(fetchRequest: fetch)
+                request.resultType = .resultTypeObjectIDs
+                do {
+                    let result = try ctx.execute(request) as? NSBatchDeleteResult
+                    if let objectIDs = result?.result as? [NSManagedObjectID] {
+                        let changes = [NSDeletedObjectsKey: objectIDs]
+                        NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, into: [container.viewContext])
+                    }
+                } catch {
+                    #if DEBUG
+                    print("⚠️ clearAllData error for entity \(name): \(error)")
+                    #endif
+                }
+            }
+            do { try ctx.save() } catch { }
+        }
     }
     
     private static func getStoreURL() -> URL {
@@ -323,7 +384,7 @@ final class CoreDataManager {
             throw NSError(domain: "CoreDataManager", code: 134400, userInfo: [NSLocalizedDescriptionKey: "iCloud недоступен"])
         }
 
-        print("🔄 Переключение на CloudKit режим...")
+        // logging suppressed
 
         // Сохраняем ссылку на старый контейнер
         let oldContainer = persistentContainer
@@ -332,8 +393,9 @@ final class CoreDataManager {
         }
 
         do {
-            // Создаем новый CloudKit контейнер
-            let cloudContainer = Self.createCloudKitContainer()
+            // Создаем новый CloudKit контейнер и асинхронно загружаем его
+            let cloudContainer = Self.makeCloudKitContainer()
+            try await Self.configureAndLoadCloudKitContainerAsync(cloudContainer)
 
             // Мигрируем данные из локального контейнера
             try await migrateData(from: oldContainer, to: cloudContainer)
@@ -342,7 +404,7 @@ final class CoreDataManager {
             persistentContainer = cloudContainer
             currentMode = .cloudKit
 
-            print("✅ Переключение на CloudKit завершено")
+            // logging suppressed
 
             // Уведомляем о смене режима
             NotificationCenter.default.post(name: .storageModeSwitched, object: StorageMode.cloudKit)
@@ -355,7 +417,8 @@ final class CoreDataManager {
     }
     
     /// Переключается на локальный режим (после выхода из Apple ID)
-    func disableCloudKit() {
+    /// Зеркалирует актуальные данные из CloudKit в локальную базу
+    func disableCloudKit() async {
         guard currentMode == .cloudKit else {
             print("⚠️ CloudKit уже отключен")
             return
@@ -367,16 +430,36 @@ final class CoreDataManager {
         isSwitchingStorage = true
         defer { isSwitchingStorage = false }
         
-        print("🔄 Переключение на локальный режим...")
+        // logging suppressed
         
-        // Создаем новый локальный контейнер
-        let localContainer = Self.createLocalContainer()
-        
+        // Источник: текущий CloudKit контейнер
+        let cloudContainer = persistentContainer
+        cloudContainer.viewContext.performAndWait {
+            cloudContainer.viewContext.reset()
+        }
+
+        // Цель: новый локальный контейнер и его загрузка
+        let localContainer = Self.makeLocalContainer()
+        do {
+            try await Self.configureAndLoadLocalContainerAsync(localContainer)
+        } catch {
+            print("❌ Ошибка загрузки локального контейнера перед зеркалированием: \(error)")
+        }
+        // Полностью очищаем локальную базу перед зеркалированием (после загрузки стора)
+        Self.clearAllData(in: localContainer)
+
+        do {
+            try await migrateData(from: cloudContainer, to: localContainer)
+        } catch {
+            print("❌ Ошибка зеркалирования данных CloudKit → Local: \(error)")
+            // Даже при ошибке переключаемся, чтобы не зависать в облачном режиме
+        }
+
         // Переключаемся на локальное хранилище
         persistentContainer = localContainer
         currentMode = .local
         
-        print("✅ Переключение на локальный режим завершено")
+        // logging suppressed
         
         // Уведомляем о смене режима
         NotificationCenter.default.post(name: .storageModeSwitched, object: StorageMode.local)
@@ -395,7 +478,7 @@ final class CoreDataManager {
             try await enableCloudKit()
         } else {
             // Если уже в CloudKit режиме, принудительно синхронизируем данные
-            print("🔄 Принудительная синхронизация с CloudKit...")
+            // logging suppressed
             // CloudKit автоматически синхронизируется, но мы можем принудительно обновить данные
             try await syncLocalDataToCloudKit()
         }
@@ -430,7 +513,7 @@ final class CoreDataManager {
     
     /// Мигрирует данные между контейнерами с умным объединением
     private func migrateData(from sourceContainer: NSPersistentContainer, to targetContainer: NSPersistentContainer) async throws {
-        print("🔄 Умная миграция данных с объединением...")
+        // logging suppressed
         
         let sourceContext = sourceContainer.newBackgroundContext()
         let targetContext = targetContainer.newBackgroundContext()
@@ -444,7 +527,7 @@ final class CoreDataManager {
                     let sourceCardHistory = try self.loadAllCardHistory(from: sourceContext)
                     let sourceCongratsHistory = try self.loadAllCongratsHistory(from: sourceContext)
                     
-                    print("📊 Найдено в источнике: \(sourceContacts.count) контактов, \(sourceHolidays.count) праздников, \(sourceCardHistory.count) открыток, \(sourceCongratsHistory.count) поздравлений")
+                    // logging suppressed
                     
                     // Теперь мигрируем в целевой контекст
                     targetContext.perform {
@@ -467,10 +550,10 @@ final class CoreDataManager {
                             // Сохраняем целевой контекст
                             if targetContext.hasChanges {
                                 try targetContext.save()
-                                print("✅ Данные сохранены в CloudKit хранилище")
+                                // logging suppressed
                             }
                             
-                            print("✅ Умная миграция данных завершена")
+                            // logging suppressed
                             continuation.resume()
                             
                         } catch {
@@ -528,14 +611,48 @@ final class CoreDataManager {
                 mergeContactData(from: sourceContact, to: existingTarget)
                 mergedCount += 1
             } else {
-                // Контакт не существует - создаем новый
-                let targetContact = ContactEntity(context: target)
-                copyContactData(from: sourceContact, to: targetContact)
-                migratedCount += 1
+                // Доп. проверка дубликатов по естественным ключам
+                if let dup = try findDuplicateContactCandidate(of: sourceContact, in: target) {
+                    mergeContactData(from: sourceContact, to: dup)
+                    mergedCount += 1
+                } else {
+                    // Контакт не существует - создаем новый
+                    let targetContact = ContactEntity(context: target)
+                    copyContactData(from: sourceContact, to: targetContact)
+                    migratedCount += 1
+                }
             }
         }
         
-        print("🔄 Контакты: мигрировано \(migratedCount), объединено \(mergedCount)")
+        // logging suppressed
+    }
+
+    /// Поиск кандидата‑дубликата контакта по «естественным» ключам
+    /// 1) по совпадающему номеру телефона (если не пуст)
+    /// 2) по (name+surname) и совпадающему дню/месяцу рождения
+    private func findDuplicateContactCandidate(of source: ContactEntity, in context: NSManagedObjectContext) throws -> ContactEntity? {
+        // 1) Телефон
+        if let phone = source.phoneNumber, !phone.isEmpty {
+            let req: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+            req.fetchLimit = 1
+            req.predicate = NSPredicate(format: "phoneNumber == %@", phone)
+            if let found = try context.fetch(req).first { return found }
+        }
+        // 2) Имя+Фамилия+дата рождения (день/месяц)
+        let name = (source.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let surname = (source.surname ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let day = Int(source.birthdayDay)
+        let month = Int(source.birthdayMonth)
+        if !name.isEmpty || !surname.isEmpty, day != 0, month != 0 {
+            let req: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+            req.fetchLimit = 1
+            req.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "birthdayDay == %d AND birthdayMonth == %d", day, month),
+                NSPredicate(format: "(name ==[cd] %@) OR (surname ==[cd] %@)", name, surname)
+            ])
+            if let found = try context.fetch(req).first { return found }
+        }
+        return nil
     }
     
     private func migrateHolidaysWithMerge(from sourceHolidays: [HolidayEntity], to target: NSManagedObjectContext) throws {
@@ -559,7 +676,7 @@ final class CoreDataManager {
             }
         }
         
-        print("🔄 Праздники: мигрировано \(migratedCount), объединено \(mergedCount)")
+        // logging suppressed
     }
     
     private func migrateCardHistoryWithMerge(from sourceCards: [CardHistoryEntity], to target: NSManagedObjectContext) throws {
@@ -577,13 +694,60 @@ final class CoreDataManager {
                 mergeCardHistoryData(from: sourceCard, to: existingTarget)
                 mergedCount += 1
             } else {
-                let targetCard = CardHistoryEntity(context: target)
-                copyCardHistoryData(from: sourceCard, to: targetCard)
-                migratedCount += 1
+                // Доп. проверка дубликатов по естественному ключу (contact+cardID+день) или (holidayID+cardID+день)
+                var duplicate: CardHistoryEntity?
+                if let date = sourceCard.date {
+                    let day = Calendar.current.startOfDay(for: date)
+                    let nextDay = Calendar.current.date(byAdding: .day, value: 1, to: day) ?? day
+                    if let contactId = sourceCard.contact?.id {
+                        let byContactCardAndDay: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
+                        byContactCardAndDay.fetchLimit = 1
+                        byContactCardAndDay.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                            NSPredicate(format: "contact.id == %@", contactId as CVarArg),
+                            NSPredicate(format: "cardID == %@", sourceCard.cardID ?? ""),
+                            NSPredicate(format: "date >= %@ AND date < %@", day as NSDate, nextDay as NSDate)
+                        ])
+                        duplicate = try target.fetch(byContactCardAndDay).first
+                    } else if let holidayId = sourceCard.holidayID {
+                        let byHolidayCardAndDay: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
+                        byHolidayCardAndDay.fetchLimit = 1
+                        byHolidayCardAndDay.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                            NSPredicate(format: "holidayID == %@", holidayId as CVarArg),
+                            NSPredicate(format: "cardID == %@", sourceCard.cardID ?? ""),
+                            NSPredicate(format: "date >= %@ AND date < %@", day as NSDate, nextDay as NSDate)
+                        ])
+                        duplicate = try target.fetch(byHolidayCardAndDay).first
+                    }
+                }
+
+                if let dup = duplicate {
+                    mergeCardHistoryData(from: sourceCard, to: dup)
+                    // Связь с контактом можно дополнить, если отсутствует
+                    if dup.contact == nil, let contactId = sourceCard.contact?.id {
+                        let cf: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+                        cf.fetchLimit = 1
+                        cf.predicate = NSPredicate(format: "id == %@", contactId as CVarArg)
+                        if let found = try target.fetch(cf).first { dup.contact = found }
+                    }
+                    mergedCount += 1
+                } else {
+                    let targetCard = CardHistoryEntity(context: target)
+                    copyCardHistoryData(from: sourceCard, to: targetCard)
+                    // Восстанавливаем связь с контактом по id
+                    if let contactId = sourceCard.contact?.id {
+                        let contactFetch: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+                        contactFetch.fetchLimit = 1
+                        contactFetch.predicate = NSPredicate(format: "id == %@", contactId as CVarArg)
+                        if let foundContact = try target.fetch(contactFetch).first {
+                            targetCard.contact = foundContact
+                        }
+                    }
+                    migratedCount += 1
+                }
             }
         }
         
-        print("🔄 Открытки: мигрировано \(migratedCount), объединено \(mergedCount)")
+        // logging suppressed
     }
     
     private func migrateCongratsHistoryWithMerge(from sourceCongrats: [CongratsHistoryEntity], to target: NSManagedObjectContext) throws {
@@ -603,11 +767,20 @@ final class CoreDataManager {
             } else {
                 let targetCongrats = CongratsHistoryEntity(context: target)
                 copyCongratsHistoryData(from: sourceCongrats, to: targetCongrats)
+                // Восстанавливаем связь с контактом по id
+                if let contactId = sourceCongrats.contact?.id {
+                    let contactFetch: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+                    contactFetch.fetchLimit = 1
+                    contactFetch.predicate = NSPredicate(format: "id == %@", contactId as CVarArg)
+                    if let foundContact = try target.fetch(contactFetch).first {
+                        targetCongrats.contact = foundContact
+                    }
+                }
                 migratedCount += 1
             }
         }
         
-        print("🔄 Поздравления: мигрировано \(migratedCount), объединено \(mergedCount)")
+        // logging suppressed
     }
     
     
@@ -762,7 +935,7 @@ final class CoreDataManager {
             }
         }
         
-        print("🔄 Связи между сущностями восстановлены")
+        // logging suppressed
     }
     
     // MARK: - Data Copying Helpers

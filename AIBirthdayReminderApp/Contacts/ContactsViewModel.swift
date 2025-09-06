@@ -2,9 +2,10 @@ import Foundation
 import CoreData
 import UIKit
 import SwiftUI
+import CoreData
 
 @MainActor
-class ContactsViewModel: ObservableObject {
+class ContactsViewModel: NSObject, ObservableObject {
     enum AppColorScheme: String, CaseIterable, Identifiable, Codable {
         case system, light, dark
         var id: String { rawValue }
@@ -92,6 +93,8 @@ class ContactsViewModel: ObservableObject {
     }
     
     private let notificationSettingsKey = "globalNotificationSettings"
+    private var frc: NSFetchedResultsController<ContactEntity>? = nil
+    private var didSetInitialSnapshot = false
     private var viewContext: NSManagedObjectContext { CoreDataManager.shared.viewContext }
     
     var sortedContacts: [Contact] {
@@ -107,13 +110,14 @@ class ContactsViewModel: ObservableObject {
         })
     }
     
-    init() {
+    override init() {
+        super.init()
         loadNotificationSettings()
         if let stored = UserDefaults.standard.string(forKey: "colorScheme"),
            let scheme = AppColorScheme(rawValue: stored) {
             colorScheme = scheme
         }
-        loadContactsFromCoreData()
+        // Не запускаем FRC в init. Ждем нотификацию, что стор готов (.storageModeSwitched)
         setupStorageModeObserver()
     }
     
@@ -333,11 +337,102 @@ class ContactsViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            print("🔄 ContactsViewModel: режим хранения изменен")
-            // Перезагружаем данные при смене режима
+            // Пересоздаём FRC на новом viewContext только после готовности стора.
+            // Сбрасываем флаг, чтобы не показать пустой список во время переключения.
             Task { @MainActor in
-                self?.loadContactsFromCoreData()
+                self?.didSetInitialSnapshot = false
+                self?.startObservingContacts()
             }
+        }
+    }
+
+    // MARK: - NSFetchedResultsController
+    private func startObservingContacts() {
+        let fetch: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+        fetch.fetchBatchSize = 50
+        fetch.sortDescriptors = [NSSortDescriptor(key: "name", ascending: true, selector: #selector(NSString.localizedCaseInsensitiveCompare(_:)))]
+        fetch.relationshipKeyPathsForPrefetching = ["congratsHistory", "cardHistory"]
+
+        let controller = NSFetchedResultsController(fetchRequest: fetch,
+                                                    managedObjectContext: viewContext,
+                                                    sectionNameKeyPath: nil,
+                                                    cacheName: nil)
+        controller.delegate = self
+        do {
+            try controller.performFetch()
+        } catch {
+            print("❌ FRC performFetch error: \(error)")
+        }
+        self.frc = controller
+        applySnapshotFromFRC()
+    }
+
+    private func applySnapshotFromFRC() {
+        let objs = frc?.fetchedObjects ?? []
+        let mapped: [Contact] = objs.compactMap { e in
+            guard let entityId = e.id else { return nil }
+            let birthday: Birthday? = {
+                let day = Int(e.birthdayDay)
+                let month = Int(e.birthdayMonth)
+                let year = Int(e.birthdayYear)
+                if day != 0 && month != 0 {
+                    return Birthday(day: day, month: month, year: year != 0 ? year : nil)
+                }
+                return nil
+            }()
+            // Map relations without extra fetches
+            let congrats: [CongratsHistoryItem] = (e.congratsHistory as? Set<CongratsHistoryEntity> ?? [])
+                .compactMap { ce in
+                    guard let id = ce.id, let date = ce.date else { return nil }
+                    return CongratsHistoryItem(id: id, date: date, message: ce.message ?? "")
+                }
+                .sorted { $0.date > $1.date }
+            let cards: [CardHistoryItem] = (e.cardHistory as? Set<CardHistoryEntity> ?? [])
+                .compactMap { he in
+                    guard let id = he.id, let date = he.date else { return nil }
+                    return CardHistoryItem(id: id, date: date, cardID: he.cardID ?? "")
+                }
+                .sorted { $0.date > $1.date }
+
+            return Contact(
+                id: entityId,
+                name: e.name ?? "",
+                surname: e.surname,
+                nickname: e.nickname,
+                relationType: e.relationType,
+                gender: e.gender,
+                birthday: birthday,
+                notificationSettings: NotificationSettings(
+                    enabled: e.notificationEnabled,
+                    daysBefore: [Int(e.notificationDaysBefore)],
+                    hour: Int(e.notificationHour),
+                    minute: Int(e.notificationMinute)
+                ),
+                imageData: e.imageData,
+                emoji: e.emoji,
+                occupation: e.occupation,
+                hobbies: e.hobbies,
+                leisure: e.leisure,
+                additionalInfo: e.additionalInfo,
+                phoneNumber: e.phoneNumber,
+                congratsHistory: congrats,
+                cardHistory: cards
+            )
+        }
+        // Избегаем мигания пустым списком при первом получении снапшота
+        if !didSetInitialSnapshot && mapped.isEmpty {
+            return
+        }
+        self.contacts = mapped
+        if !mapped.isEmpty { didSetInitialSnapshot = true }
+    }
+}
+
+extension ContactsViewModel: NSFetchedResultsControllerDelegate {
+    nonisolated func controllerDidChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
+        // Перекладываем работу на главный актор, так как ContactsViewModel помечен @MainActor
+        Task { @MainActor in
+            self.applySnapshotFromFRC()
         }
     }
 }

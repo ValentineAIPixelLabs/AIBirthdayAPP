@@ -220,11 +220,13 @@ import ContactsUI
             ) {
                 Button("common.no", role: .cancel) { }
                 Button("signout.confirm.ok", role: .destructive) {
-                    AppleSignInManager.shared.signOut()
-                    appleId = nil
-                    authCoverSignedIn = false
-                    showAuthScreen = false
-                    suppressAuthAfterSignOut = true
+                    Task { @MainActor in
+                        await AppleSignInManager.shared.signOut()
+                        appleId = nil
+                        authCoverSignedIn = false
+                        showAuthScreen = false
+                        suppressAuthAfterSignOut = true
+                    }
                 }
             }
         }
