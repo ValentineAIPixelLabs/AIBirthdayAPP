@@ -42,24 +42,54 @@ final class CoreDataManager {
 
 
     private init() {
-        // Инициализируем сразу в локальном режиме (асинхронная загрузка стора)
-        let container = Self.makeLocalContainer()
-        persistentContainer = container
+        // Инициализация: определяем режим хранения и загружаем соответствующий контейнер асинхронно
+        let localPlaceholder = Self.makeLocalContainer() // placeholder до выбора режима
+        persistentContainer = localPlaceholder
         currentMode = .local
-        print("🏠 CoreDataManager инициализируется в локальном режиме (async load)")
+        print("🧭 CoreDataManager: определяю режим хранения при запуске…")
+
         Task { @MainActor in
+            if isUserSignedIn {
+                // Проверим доступность iCloud
+                let status: CKAccountStatus
+                do {
+                    status = try await CKContainer.default().accountStatus()
+                } catch {
+                    #if DEBUG
+                    print("⚠️ Не удалось получить статус iCloud на старте: \(error). Загружаем локальный режим")
+                    #endif
+                    status = .couldNotDetermine
+                }
+
+                if status == .available {
+                    // Стартуем сразу в CloudKit, без промежуточного локального режима
+                    print("☁️ Запуск в CloudKit режиме (пользователь уже залогинен)")
+                    let cloud = Self.makeCloudKitContainer()
+                    do {
+                        try await Self.configureAndLoadCloudKitContainerAsync(cloud)
+                        persistentContainer = cloud
+                        currentMode = .cloudKit
+                        NotificationCenter.default.post(name: .storageModeSwitched, object: StorageMode.cloudKit)
+                        return
+                    } catch {
+                        print("❌ Ошибка загрузки CloudKit контейнера на старте: \(error). Переходим в локальный режим")
+                    }
+                } else {
+                    #if DEBUG
+                    print("ℹ️ iCloud недоступен на старте (status=\(status.rawValue)). Загружаем локальный режим")
+                    #endif
+                }
+            }
+
+            // Локальный режим по умолчанию
             do {
-                try await Self.configureAndLoadLocalContainerAsync(container)
+                try await Self.configureAndLoadLocalContainerAsync(localPlaceholder)
                 print("🏠 Локальный контейнер загружен (async)")
-                // Сообщим подписчикам, чтобы при первом старте обновили данные
                 NotificationCenter.default.post(name: .storageModeSwitched, object: StorageMode.local)
             } catch {
                 fatalError("❌ Ошибка асинхронной загрузки локального стора: \(error)")
             }
         }
-        
-        // Проверяем состояние входа при запуске
-        checkSignInStateOnLaunch()
         // Observe iCloud account status changes and react accordingly
         NotificationCenter.default.addObserver(forName: .CKAccountChanged, object: nil, queue: .main) { [weak self] _ in
             guard let self = self else { return }
@@ -112,22 +142,8 @@ final class CoreDataManager {
         }
     }
     
-    /// Проверяет состояние входа при запуске приложения
-    private func checkSignInStateOnLaunch() {
-        if isUserSignedIn {
-            print("✅ Пользователь уже вошел в аккаунт, активируем CloudKit...")
-            Task {
-                do {
-                    try await enableCloudKit()
-                    print("✅ CloudKit активирован при запуске (пользователь авторизован)")
-                } catch {
-                    print("❌ Ошибка активации CloudKit при запуске: \(error)")
-                }
-            }
-        } else {
-            print("🏠 Пользователь не вошел в аккаунт, работаем в локальном режиме")
-        }
-    }
+    /// Проверяет состояние входа при запуске приложения (больше не вызывается из init; логика старта перенесена в init)
+    private func checkSignInStateOnLaunch() { /* deprecated path */ }
     
     // MARK: - Container Creation
     
