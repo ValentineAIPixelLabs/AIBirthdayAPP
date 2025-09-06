@@ -96,7 +96,7 @@ final class CoreDataManager {
                 #if DEBUG
                 print("⚠️ iCloud unavailable (status=\(status.rawValue)); switching to local mode…")
                 #endif
-                disableCloudKit()
+                await disableCloudKit()
             }
         }
     }
@@ -186,6 +186,31 @@ final class CoreDataManager {
         #endif
         
         print("☁️ CloudKit контейнер настроен")
+    }
+
+    /// Полное очищение всех данных в указанном контейнере
+    private static func clearAllData(in container: NSPersistentContainer) {
+        let ctx = container.newBackgroundContext()
+        ctx.performAndWait {
+            let entityNames = container.managedObjectModel.entities.compactMap { $0.name }
+            for name in entityNames {
+                let fetch = NSFetchRequest<NSFetchRequestResult>(entityName: name)
+                let request = NSBatchDeleteRequest(fetchRequest: fetch)
+                request.resultType = .resultTypeObjectIDs
+                do {
+                    let result = try ctx.execute(request) as? NSBatchDeleteResult
+                    if let objectIDs = result?.result as? [NSManagedObjectID] {
+                        let changes = [NSDeletedObjectsKey: objectIDs]
+                        NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, into: [container.viewContext])
+                    }
+                } catch {
+                    #if DEBUG
+                    print("⚠️ clearAllData error for entity \(name): \(error)")
+                    #endif
+                }
+            }
+            do { try ctx.save() } catch { }
+        }
     }
     
     private static func getStoreURL() -> URL {
@@ -355,7 +380,8 @@ final class CoreDataManager {
     }
     
     /// Переключается на локальный режим (после выхода из Apple ID)
-    func disableCloudKit() {
+    /// Зеркалирует актуальные данные из CloudKit в локальную базу
+    func disableCloudKit() async {
         guard currentMode == .cloudKit else {
             print("⚠️ CloudKit уже отключен")
             return
@@ -369,14 +395,30 @@ final class CoreDataManager {
         
         print("🔄 Переключение на локальный режим...")
         
-        // Создаем новый локальный контейнер
+        // Источник: текущий CloudKit контейнер
+        let cloudContainer = persistentContainer
+        cloudContainer.viewContext.performAndWait {
+            cloudContainer.viewContext.reset()
+        }
+
+        // Цель: новый локальный контейнер
         let localContainer = Self.createLocalContainer()
-        
+
+        // Полностью очищаем локальную базу перед зеркалированием, чтобы она стала идентична CloudKit
+        Self.clearAllData(in: localContainer)
+
+        do {
+            try await migrateData(from: cloudContainer, to: localContainer)
+        } catch {
+            print("❌ Ошибка зеркалирования данных CloudKit → Local: \(error)")
+            // Даже при ошибке переключаемся, чтобы не зависать в облачном режиме
+        }
+
         // Переключаемся на локальное хранилище
         persistentContainer = localContainer
         currentMode = .local
         
-        print("✅ Переключение на локальный режим завершено")
+        print("✅ Переключение на локальный режим завершено (локальная база = CloudKit)")
         
         // Уведомляем о смене режима
         NotificationCenter.default.post(name: .storageModeSwitched, object: StorageMode.local)
@@ -528,14 +570,48 @@ final class CoreDataManager {
                 mergeContactData(from: sourceContact, to: existingTarget)
                 mergedCount += 1
             } else {
-                // Контакт не существует - создаем новый
-                let targetContact = ContactEntity(context: target)
-                copyContactData(from: sourceContact, to: targetContact)
-                migratedCount += 1
+                // Доп. проверка дубликатов по естественным ключам
+                if let dup = try findDuplicateContactCandidate(of: sourceContact, in: target) {
+                    mergeContactData(from: sourceContact, to: dup)
+                    mergedCount += 1
+                } else {
+                    // Контакт не существует - создаем новый
+                    let targetContact = ContactEntity(context: target)
+                    copyContactData(from: sourceContact, to: targetContact)
+                    migratedCount += 1
+                }
             }
         }
         
         print("🔄 Контакты: мигрировано \(migratedCount), объединено \(mergedCount)")
+    }
+
+    /// Поиск кандидата‑дубликата контакта по «естественным» ключам
+    /// 1) по совпадающему номеру телефона (если не пуст)
+    /// 2) по (name+surname) и совпадающему дню/месяцу рождения
+    private func findDuplicateContactCandidate(of source: ContactEntity, in context: NSManagedObjectContext) throws -> ContactEntity? {
+        // 1) Телефон
+        if let phone = source.phoneNumber, !phone.isEmpty {
+            let req: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+            req.fetchLimit = 1
+            req.predicate = NSPredicate(format: "phoneNumber == %@", phone)
+            if let found = try context.fetch(req).first { return found }
+        }
+        // 2) Имя+Фамилия+дата рождения (день/месяц)
+        let name = (source.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let surname = (source.surname ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let day = Int(source.birthdayDay)
+        let month = Int(source.birthdayMonth)
+        if !name.isEmpty || !surname.isEmpty, day != 0, month != 0 {
+            let req: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+            req.fetchLimit = 1
+            req.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "birthdayDay == %d AND birthdayMonth == %d", day, month),
+                NSPredicate(format: "(name ==[cd] %@) OR (surname ==[cd] %@)", name, surname)
+            ])
+            if let found = try context.fetch(req).first { return found }
+        }
+        return nil
     }
     
     private func migrateHolidaysWithMerge(from sourceHolidays: [HolidayEntity], to target: NSManagedObjectContext) throws {
@@ -577,9 +653,56 @@ final class CoreDataManager {
                 mergeCardHistoryData(from: sourceCard, to: existingTarget)
                 mergedCount += 1
             } else {
-                let targetCard = CardHistoryEntity(context: target)
-                copyCardHistoryData(from: sourceCard, to: targetCard)
-                migratedCount += 1
+                // Доп. проверка дубликатов по естественному ключу (contact+cardID+день) или (holidayID+cardID+день)
+                var duplicate: CardHistoryEntity?
+                if let date = sourceCard.date {
+                    let day = Calendar.current.startOfDay(for: date)
+                    let nextDay = Calendar.current.date(byAdding: .day, value: 1, to: day) ?? day
+                    if let contactId = sourceCard.contact?.id {
+                        let byContactCardAndDay: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
+                        byContactCardAndDay.fetchLimit = 1
+                        byContactCardAndDay.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                            NSPredicate(format: "contact.id == %@", contactId as CVarArg),
+                            NSPredicate(format: "cardID == %@", sourceCard.cardID ?? ""),
+                            NSPredicate(format: "date >= %@ AND date < %@", day as NSDate, nextDay as NSDate)
+                        ])
+                        duplicate = try target.fetch(byContactCardAndDay).first
+                    } else if let holidayId = sourceCard.holidayID {
+                        let byHolidayCardAndDay: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
+                        byHolidayCardAndDay.fetchLimit = 1
+                        byHolidayCardAndDay.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                            NSPredicate(format: "holidayID == %@", holidayId as CVarArg),
+                            NSPredicate(format: "cardID == %@", sourceCard.cardID ?? ""),
+                            NSPredicate(format: "date >= %@ AND date < %@", day as NSDate, nextDay as NSDate)
+                        ])
+                        duplicate = try target.fetch(byHolidayCardAndDay).first
+                    }
+                }
+
+                if let dup = duplicate {
+                    mergeCardHistoryData(from: sourceCard, to: dup)
+                    // Связь с контактом можно дополнить, если отсутствует
+                    if dup.contact == nil, let contactId = sourceCard.contact?.id {
+                        let cf: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+                        cf.fetchLimit = 1
+                        cf.predicate = NSPredicate(format: "id == %@", contactId as CVarArg)
+                        if let found = try target.fetch(cf).first { dup.contact = found }
+                    }
+                    mergedCount += 1
+                } else {
+                    let targetCard = CardHistoryEntity(context: target)
+                    copyCardHistoryData(from: sourceCard, to: targetCard)
+                    // Восстанавливаем связь с контактом по id
+                    if let contactId = sourceCard.contact?.id {
+                        let contactFetch: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+                        contactFetch.fetchLimit = 1
+                        contactFetch.predicate = NSPredicate(format: "id == %@", contactId as CVarArg)
+                        if let foundContact = try target.fetch(contactFetch).first {
+                            targetCard.contact = foundContact
+                        }
+                    }
+                    migratedCount += 1
+                }
             }
         }
         
@@ -603,6 +726,15 @@ final class CoreDataManager {
             } else {
                 let targetCongrats = CongratsHistoryEntity(context: target)
                 copyCongratsHistoryData(from: sourceCongrats, to: targetCongrats)
+                // Восстанавливаем связь с контактом по id
+                if let contactId = sourceCongrats.contact?.id {
+                    let contactFetch: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
+                    contactFetch.fetchLimit = 1
+                    contactFetch.predicate = NSPredicate(format: "id == %@", contactId as CVarArg)
+                    if let foundContact = try target.fetch(contactFetch).first {
+                        targetCongrats.contact = foundContact
+                    }
+                }
                 migratedCount += 1
             }
         }
