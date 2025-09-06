@@ -42,52 +42,46 @@ final class CoreDataManager {
 
 
     private init() {
-        // Инициализация: определяем режим хранения и загружаем соответствующий контейнер асинхронно
-        let localPlaceholder = Self.makeLocalContainer() // placeholder до выбора режима
-        persistentContainer = localPlaceholder
+        // Всегда быстро поднимаем локальный контейнер для мгновенного UI
+        let localContainer = Self.makeLocalContainer()
+        persistentContainer = localContainer
         currentMode = .local
-        print("🧭 CoreDataManager: определяю режим хранения при запуске…")
+        print("🏠 CoreDataManager: локальный режим как тёплый кеш (async load)")
 
         Task { @MainActor in
-            if isUserSignedIn {
-                // Проверим доступность iCloud
-                let status: CKAccountStatus
-                do {
-                    status = try await CKContainer.default().accountStatus()
-                } catch {
-                    #if DEBUG
-                    print("⚠️ Не удалось получить статус iCloud на старте: \(error). Загружаем локальный режим")
-                    #endif
-                    status = .couldNotDetermine
-                }
-
-                if status == .available {
-                    // Стартуем сразу в CloudKit, без промежуточного локального режима
-                    print("☁️ Запуск в CloudKit режиме (пользователь уже залогинен)")
-                    let cloud = Self.makeCloudKitContainer()
-                    do {
-                        try await Self.configureAndLoadCloudKitContainerAsync(cloud)
-                        persistentContainer = cloud
-                        currentMode = .cloudKit
-                        NotificationCenter.default.post(name: .storageModeSwitched, object: StorageMode.cloudKit)
-                        return
-                    } catch {
-                        print("❌ Ошибка загрузки CloudKit контейнера на старте: \(error). Переходим в локальный режим")
-                    }
-                } else {
-                    #if DEBUG
-                    print("ℹ️ iCloud недоступен на старте (status=\(status.rawValue)). Загружаем локальный режим")
-                    #endif
-                }
-            }
-
-            // Локальный режим по умолчанию
+            // 1) Загружаем локальный стор (не блокируя UI)
             do {
-                try await Self.configureAndLoadLocalContainerAsync(localPlaceholder)
+                try await Self.configureAndLoadLocalContainerAsync(localContainer)
                 print("🏠 Локальный контейнер загружен (async)")
                 NotificationCenter.default.post(name: .storageModeSwitched, object: StorageMode.local)
             } catch {
                 fatalError("❌ Ошибка асинхронной загрузки локального стора: \(error)")
+            }
+
+            // 2) Если пользователь уже авторизован и iCloud доступен — включаем CloudKit в фоне
+            guard isUserSignedIn else { return }
+            let status: CKAccountStatus
+            do {
+                status = try await CKContainer.default().accountStatus()
+            } catch {
+                #if DEBUG
+                print("⚠️ Не удалось получить статус iCloud на старте: \(error). Остаёмся в локальном режиме")
+                #endif
+                return
+            }
+            guard status == .available else {
+                #if DEBUG
+                print("ℹ️ iCloud недоступен на старте (status=\(status.rawValue)). Остаёмся в локальном режиме")
+                #endif
+                return
+            }
+
+            // 3) Мягкое переключение: миграция уникальных локальных данных → CloudKit и переключение контейнера
+            do {
+                try await enableCloudKit()
+                print("✅ CloudKit активирован после старта (пользователь авторизован)")
+            } catch {
+                print("❌ Ошибка активации CloudKit после старта: \(error)")
             }
         }
         // Observe iCloud account status changes and react accordingly
@@ -231,17 +225,9 @@ final class CoreDataManager {
         configureCloudKitContainer(container)
         try await loadStoresOrResetOnceAsync(container)
         configureViewContext(container.viewContext)
+        // Dev schema initialization отключена для ускорения UX старта. Используйте CloudKit Dashboard для схемы.
         #if DEBUG
-        #if !targetEnvironment(simulator)
-        do {
-            try container.initializeCloudKitSchema(options: [])
-            print("☁️ CloudKit dev schema initialized")
-        } catch {
-            print("⚠️ initializeCloudKitSchema failed: \(error)")
-        }
-        #else
-        print("ℹ️ Skipping initializeCloudKitSchema on Simulator")
-        #endif
+        print("ℹ️ Skipping initializeCloudKitSchema in DEBUG for faster startup")
         #endif
         print("☁️ CloudKit контейнер настроен и загружен (async)")
     }

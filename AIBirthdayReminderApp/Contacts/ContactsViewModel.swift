@@ -94,6 +94,7 @@ class ContactsViewModel: NSObject, ObservableObject {
     
     private let notificationSettingsKey = "globalNotificationSettings"
     private var frc: NSFetchedResultsController<ContactEntity>? = nil
+    private var didSetInitialSnapshot = false
     private var viewContext: NSManagedObjectContext { CoreDataManager.shared.viewContext }
     
     var sortedContacts: [Contact] {
@@ -116,7 +117,7 @@ class ContactsViewModel: NSObject, ObservableObject {
            let scheme = AppColorScheme(rawValue: stored) {
             colorScheme = scheme
         }
-        startObservingContacts()
+        // Не запускаем FRC в init. Ждем нотификацию, что стор готов (.storageModeSwitched)
         setupStorageModeObserver()
     }
     
@@ -337,8 +338,10 @@ class ContactsViewModel: NSObject, ObservableObject {
             queue: .main
         ) { [weak self] notification in
             print("🔄 ContactsViewModel: режим хранения изменен")
-            // Пересоздаём FRC на новом viewContext
+            // Пересоздаём FRC на новом viewContext только после готовности стора.
+            // Сбрасываем флаг, чтобы не показать пустой список во время переключения.
             Task { @MainActor in
+                self?.didSetInitialSnapshot = false
                 self?.startObservingContacts()
             }
         }
@@ -417,7 +420,12 @@ class ContactsViewModel: NSObject, ObservableObject {
                 cardHistory: cards
             )
         }
+        // Избегаем мигания пустым списком при первом получении снапшота
+        if !didSetInitialSnapshot && mapped.isEmpty {
+            return
+        }
         self.contacts = mapped
+        if !mapped.isEmpty { didSetInitialSnapshot = true }
     }
 }
 
