@@ -337,7 +337,6 @@ class ContactsViewModel: NSObject, ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            print("🔄 ContactsViewModel: режим хранения изменен")
             // Пересоздаём FRC на новом viewContext только после готовности стора.
             // Сбрасываем флаг, чтобы не показать пустой список во время переключения.
             Task { @MainActor in

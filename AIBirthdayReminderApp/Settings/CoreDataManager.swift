@@ -46,13 +46,13 @@ final class CoreDataManager {
         let localContainer = Self.makeLocalContainer()
         persistentContainer = localContainer
         currentMode = .local
-        print("🏠 CoreDataManager: локальный режим как тёплый кеш (async load)")
+        // logging suppressed
 
         Task { @MainActor in
             // 1) Загружаем локальный стор (не блокируя UI)
             do {
                 try await Self.configureAndLoadLocalContainerAsync(localContainer)
-                print("🏠 Локальный контейнер загружен (async)")
+                // logging suppressed
                 NotificationCenter.default.post(name: .storageModeSwitched, object: StorageMode.local)
             } catch {
                 fatalError("❌ Ошибка асинхронной загрузки локального стора: \(error)")
@@ -64,22 +64,17 @@ final class CoreDataManager {
             do {
                 status = try await CKContainer.default().accountStatus()
             } catch {
-                #if DEBUG
-                print("⚠️ Не удалось получить статус iCloud на старте: \(error). Остаёмся в локальном режиме")
-                #endif
+                // logging suppressed
                 return
             }
             guard status == .available else {
-                #if DEBUG
-                print("ℹ️ iCloud недоступен на старте (status=\(status.rawValue)). Остаёмся в локальном режиме")
-                #endif
+                // logging suppressed
                 return
             }
 
             // 3) Мягкое переключение: миграция уникальных локальных данных → CloudKit и переключение контейнера
             do {
                 try await enableCloudKit()
-                print("✅ CloudKit активирован после старта (пользователь авторизован)")
             } catch {
                 print("❌ Ошибка активации CloudKit после старта: \(error)")
             }
@@ -165,7 +160,7 @@ final class CoreDataManager {
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
         }
-        print("🏠 Локальный контейнер настроен (описание стора)")
+        // logging suppressed
     }
     
     private static func configureCloudKitContainer(_ container: NSPersistentCloudKitContainer) {
@@ -183,7 +178,7 @@ final class CoreDataManager {
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
         }
-        print("☁️ CloudKit контейнер настроен (описание стора)")
+        // logging suppressed
     }
 
     // Async configure + load helpers
@@ -218,7 +213,7 @@ final class CoreDataManager {
         configureLocalContainer(container)
         try await loadStoresOrResetOnceAsync(container)
         configureViewContext(container.viewContext)
-        print("🏠 Локальный контейнер настроен и загружен (async)")
+        // logging suppressed
     }
 
     private static func configureAndLoadCloudKitContainerAsync(_ container: NSPersistentCloudKitContainer) async throws {
@@ -226,10 +221,7 @@ final class CoreDataManager {
         try await loadStoresOrResetOnceAsync(container)
         configureViewContext(container.viewContext)
         // Dev schema initialization отключена для ускорения UX старта. Используйте CloudKit Dashboard для схемы.
-        #if DEBUG
-        print("ℹ️ Skipping initializeCloudKitSchema in DEBUG for faster startup")
-        #endif
-        print("☁️ CloudKit контейнер настроен и загружен (async)")
+        // logging suppressed
     }
 
     /// Полное очищение всех данных в указанном контейнере
@@ -392,7 +384,7 @@ final class CoreDataManager {
             throw NSError(domain: "CoreDataManager", code: 134400, userInfo: [NSLocalizedDescriptionKey: "iCloud недоступен"])
         }
 
-        print("🔄 Переключение на CloudKit режим...")
+        // logging suppressed
 
         // Сохраняем ссылку на старый контейнер
         let oldContainer = persistentContainer
@@ -412,7 +404,7 @@ final class CoreDataManager {
             persistentContainer = cloudContainer
             currentMode = .cloudKit
 
-            print("✅ Переключение на CloudKit завершено")
+            // logging suppressed
 
             // Уведомляем о смене режима
             NotificationCenter.default.post(name: .storageModeSwitched, object: StorageMode.cloudKit)
@@ -438,7 +430,7 @@ final class CoreDataManager {
         isSwitchingStorage = true
         defer { isSwitchingStorage = false }
         
-        print("🔄 Переключение на локальный режим...")
+        // logging suppressed
         
         // Источник: текущий CloudKit контейнер
         let cloudContainer = persistentContainer
@@ -467,7 +459,7 @@ final class CoreDataManager {
         persistentContainer = localContainer
         currentMode = .local
         
-        print("✅ Переключение на локальный режим завершено (локальная база = CloudKit)")
+        // logging suppressed
         
         // Уведомляем о смене режима
         NotificationCenter.default.post(name: .storageModeSwitched, object: StorageMode.local)
@@ -486,7 +478,7 @@ final class CoreDataManager {
             try await enableCloudKit()
         } else {
             // Если уже в CloudKit режиме, принудительно синхронизируем данные
-            print("🔄 Принудительная синхронизация с CloudKit...")
+            // logging suppressed
             // CloudKit автоматически синхронизируется, но мы можем принудительно обновить данные
             try await syncLocalDataToCloudKit()
         }
@@ -521,7 +513,7 @@ final class CoreDataManager {
     
     /// Мигрирует данные между контейнерами с умным объединением
     private func migrateData(from sourceContainer: NSPersistentContainer, to targetContainer: NSPersistentContainer) async throws {
-        print("🔄 Умная миграция данных с объединением...")
+        // logging suppressed
         
         let sourceContext = sourceContainer.newBackgroundContext()
         let targetContext = targetContainer.newBackgroundContext()
@@ -535,7 +527,7 @@ final class CoreDataManager {
                     let sourceCardHistory = try self.loadAllCardHistory(from: sourceContext)
                     let sourceCongratsHistory = try self.loadAllCongratsHistory(from: sourceContext)
                     
-                    print("📊 Найдено в источнике: \(sourceContacts.count) контактов, \(sourceHolidays.count) праздников, \(sourceCardHistory.count) открыток, \(sourceCongratsHistory.count) поздравлений")
+                    // logging suppressed
                     
                     // Теперь мигрируем в целевой контекст
                     targetContext.perform {
@@ -558,10 +550,10 @@ final class CoreDataManager {
                             // Сохраняем целевой контекст
                             if targetContext.hasChanges {
                                 try targetContext.save()
-                                print("✅ Данные сохранены в CloudKit хранилище")
+                                // logging suppressed
                             }
                             
-                            print("✅ Умная миграция данных завершена")
+                            // logging suppressed
                             continuation.resume()
                             
                         } catch {
@@ -632,7 +624,7 @@ final class CoreDataManager {
             }
         }
         
-        print("🔄 Контакты: мигрировано \(migratedCount), объединено \(mergedCount)")
+        // logging suppressed
     }
 
     /// Поиск кандидата‑дубликата контакта по «естественным» ключам
@@ -684,7 +676,7 @@ final class CoreDataManager {
             }
         }
         
-        print("🔄 Праздники: мигрировано \(migratedCount), объединено \(mergedCount)")
+        // logging suppressed
     }
     
     private func migrateCardHistoryWithMerge(from sourceCards: [CardHistoryEntity], to target: NSManagedObjectContext) throws {
@@ -755,7 +747,7 @@ final class CoreDataManager {
             }
         }
         
-        print("🔄 Открытки: мигрировано \(migratedCount), объединено \(mergedCount)")
+        // logging suppressed
     }
     
     private func migrateCongratsHistoryWithMerge(from sourceCongrats: [CongratsHistoryEntity], to target: NSManagedObjectContext) throws {
@@ -788,7 +780,7 @@ final class CoreDataManager {
             }
         }
         
-        print("🔄 Поздравления: мигрировано \(migratedCount), объединено \(mergedCount)")
+        // logging suppressed
     }
     
     
@@ -943,7 +935,7 @@ final class CoreDataManager {
             }
         }
         
-        print("🔄 Связи между сущностями восстановлены")
+        // logging suppressed
     }
     
     // MARK: - Data Copying Helpers

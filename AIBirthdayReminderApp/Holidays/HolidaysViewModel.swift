@@ -176,7 +176,6 @@ class HolidaysViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            print("🔄 HolidaysViewModel: режим хранения изменен")
             // Перезагружаем данные при смене режима
             Task { @MainActor in
                 self?.loadFromCoreData()
