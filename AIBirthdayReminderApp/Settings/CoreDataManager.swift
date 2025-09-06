@@ -42,10 +42,21 @@ final class CoreDataManager {
 
 
     private init() {
-        // Инициализируем сразу в локальном режиме
-        persistentContainer = Self.createLocalContainer()
+        // Инициализируем сразу в локальном режиме (асинхронная загрузка стора)
+        let container = Self.makeLocalContainer()
+        persistentContainer = container
         currentMode = .local
-        print("🏠 CoreDataManager инициализирован в локальном режиме")
+        print("🏠 CoreDataManager инициализируется в локальном режиме (async load)")
+        Task { @MainActor in
+            do {
+                try await Self.configureAndLoadLocalContainerAsync(container)
+                print("🏠 Локальный контейнер загружен (async)")
+                // Сообщим подписчикам, чтобы при первом старте обновили данные
+                NotificationCenter.default.post(name: .storageModeSwitched, object: StorageMode.local)
+            } catch {
+                fatalError("❌ Ошибка асинхронной загрузки локального стора: \(error)")
+            }
+        }
         
         // Проверяем состояние входа при запуске
         checkSignInStateOnLaunch()
@@ -120,19 +131,17 @@ final class CoreDataManager {
     
     // MARK: - Container Creation
     
-    private static func createLocalContainer() -> NSPersistentContainer {
+    private static func makeLocalContainer() -> NSPersistentContainer {
         let container = NSPersistentContainer(name: modelName, managedObjectModel: managedModel)
-        configureLocalContainer(container)
         return container
     }
 
-    private static func createCloudKitContainer() -> NSPersistentCloudKitContainer {
+    private static func makeCloudKitContainer() -> NSPersistentCloudKitContainer {
         // Проверяем, что пользователь вошел в аккаунт
         guard CoreDataManager.shared.isUserSignedIn else {
             fatalError("❌ CloudKit контейнер не может быть создан без входа в аккаунт")
         }
         let container = NSPersistentCloudKitContainer(name: modelName, managedObjectModel: managedModel)
-        configureCloudKitContainer(container)
         return container
     }
     
@@ -146,11 +155,7 @@ final class CoreDataManager {
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
         }
-        
-        loadStoresOrResetOnce(container)
-        configureViewContext(container.viewContext)
-        
-        print("🏠 Локальный контейнер настроен")
+        print("🏠 Локальный контейнер настроен (описание стора)")
     }
     
     private static func configureCloudKitContainer(_ container: NSPersistentCloudKitContainer) {
@@ -168,10 +173,48 @@ final class CoreDataManager {
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
         }
-        
-        loadStoresOrResetOnce(container)
+        print("☁️ CloudKit контейнер настроен (описание стора)")
+    }
+
+    // Async configure + load helpers
+    private static func loadStoresOrResetOnceAsync(_ container: NSPersistentContainer) async throws {
+        func loadOnce() async throws {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                container.loadPersistentStores { _, error in
+                    if let error { continuation.resume(throwing: error) } else { continuation.resume(returning: ()) }
+                }
+            }
+        }
+        do {
+            try await loadOnce()
+        } catch {
+            if isIncompatibilityError(error) {
+                #if DEBUG
+                print("⚠️ loadPersistentStores incompatibility: \(error). Deleting store and retrying once…")
+                #endif
+                // Удаляем файлы стора (sqlite + sidecars)
+                let storeURL: URL = (container is NSPersistentCloudKitContainer) ? getCloudKitStoreURL() : getStoreURL()
+                let fm = FileManager.default
+                let sidecars = [storeURL, storeURL.appendingPathExtension("wal"), storeURL.appendingPathExtension("shm")]
+                for file in sidecars { try? fm.removeItem(at: file) }
+                try await loadOnce()
+            } else {
+                throw error
+            }
+        }
+    }
+
+    private static func configureAndLoadLocalContainerAsync(_ container: NSPersistentContainer) async throws {
+        configureLocalContainer(container)
+        try await loadStoresOrResetOnceAsync(container)
         configureViewContext(container.viewContext)
-        
+        print("🏠 Локальный контейнер настроен и загружен (async)")
+    }
+
+    private static func configureAndLoadCloudKitContainerAsync(_ container: NSPersistentCloudKitContainer) async throws {
+        configureCloudKitContainer(container)
+        try await loadStoresOrResetOnceAsync(container)
+        configureViewContext(container.viewContext)
         #if DEBUG
         #if !targetEnvironment(simulator)
         do {
@@ -184,8 +227,7 @@ final class CoreDataManager {
         print("ℹ️ Skipping initializeCloudKitSchema on Simulator")
         #endif
         #endif
-        
-        print("☁️ CloudKit контейнер настроен")
+        print("☁️ CloudKit контейнер настроен и загружен (async)")
     }
 
     /// Полное очищение всех данных в указанном контейнере
@@ -357,8 +399,9 @@ final class CoreDataManager {
         }
 
         do {
-            // Создаем новый CloudKit контейнер
-            let cloudContainer = Self.createCloudKitContainer()
+            // Создаем новый CloudKit контейнер и асинхронно загружаем его
+            let cloudContainer = Self.makeCloudKitContainer()
+            try await Self.configureAndLoadCloudKitContainerAsync(cloudContainer)
 
             // Мигрируем данные из локального контейнера
             try await migrateData(from: oldContainer, to: cloudContainer)
@@ -401,10 +444,14 @@ final class CoreDataManager {
             cloudContainer.viewContext.reset()
         }
 
-        // Цель: новый локальный контейнер
-        let localContainer = Self.createLocalContainer()
-
-        // Полностью очищаем локальную базу перед зеркалированием, чтобы она стала идентична CloudKit
+        // Цель: новый локальный контейнер и его загрузка
+        let localContainer = Self.makeLocalContainer()
+        do {
+            try await Self.configureAndLoadLocalContainerAsync(localContainer)
+        } catch {
+            print("❌ Ошибка загрузки локального контейнера перед зеркалированием: \(error)")
+        }
+        // Полностью очищаем локальную базу перед зеркалированием (после загрузки стора)
         Self.clearAllData(in: localContainer)
 
         do {

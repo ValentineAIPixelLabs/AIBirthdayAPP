@@ -58,6 +58,10 @@ struct AppTabView: View {
             let generator = UIImpactFeedbackGenerator(style: .soft)
             generator.impactOccurred()
         }
+        // После успешного входа с Apple переключаемся на вкладку с контактами
+        .onReceive(NotificationCenter.default.publisher(for: .userDidSignIn).receive(on: DispatchQueue.main)) { _ in
+            selection = .contacts
+        }
         .toolbarBackground(.visible, for: .tabBar)
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .preferredColorScheme(
