@@ -122,14 +122,17 @@ final class CongratsHistoryManager {
         CoreDataManager.shared.performBackgroundTask(author: "deleteCongrats") { ctx in
             let request: NSFetchRequest<CongratsHistoryEntity> = CongratsHistoryEntity.fetchRequest()
             request.fetchLimit = 1
+            
             request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+            
             do {
                 if let entity = try ctx.fetch(request).first {
+                    print("🗑️ ✅ Поздравление найдено для удаления: \(id)")
                     ctx.delete(entity)
                     try ctx.save()
                     print("🗑 Поздравление удалено и сохранено: \(id)")
                 } else {
-                    print("❌ Поздравление не найдено для удаления (id=\(id))")
+                    print("🗑️ ❌ Поздравление НЕ найдено для удаления: \(id)")
                 }
             } catch {
                 assertionFailure("❌ deleteCongrats fetch/save error: \(error)")

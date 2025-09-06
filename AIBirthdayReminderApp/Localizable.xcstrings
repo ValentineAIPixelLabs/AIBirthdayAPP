@@ -609,9 +609,6 @@
         }
       }
     },
-    "Cancel" : {
-
-    },
     "card.generate" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1571,9 +1568,6 @@
           }
         }
       }
-    },
-    "Debug" : {
-
     },
     "edit_holiday.custom.badge" : {
       "extractionState" : "manual",
@@ -3105,12 +3099,6 @@
         }
       }
     },
-    "Reset" : {
-
-    },
-    "Reset CloudKit & Local Data" : {
-
-    },
     "route.unknown" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3788,9 +3776,6 @@
           }
         }
       }
-    },
-    "This will completely reset all CloudKit and local data. This action cannot be undone." : {
-
     },
     "Баланс токенов" : {
 

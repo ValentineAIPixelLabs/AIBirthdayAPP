@@ -92,7 +92,7 @@ class ContactsViewModel: ObservableObject {
     }
     
     private let notificationSettingsKey = "globalNotificationSettings"
-    private let viewContext = CoreDataManager.shared.viewContext
+    private var viewContext: NSManagedObjectContext { CoreDataManager.shared.viewContext }
     
     var sortedContacts: [Contact] {
         contacts.sorted(by: {
@@ -114,6 +114,7 @@ class ContactsViewModel: ObservableObject {
             colorScheme = scheme
         }
         loadContactsFromCoreData()
+        setupStorageModeObserver()
     }
     
     func addContact(_ contact: Contact) {
@@ -157,6 +158,7 @@ class ContactsViewModel: ObservableObject {
     }
     
     private func loadContactsFromCoreData() {
+        // Загружаем все контакты
         let fetchRequest: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
         fetchRequest.fetchBatchSize = 50
 
@@ -261,9 +263,13 @@ class ContactsViewModel: ObservableObject {
             let req: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
             req.predicate = NSPredicate(format: "id == %@", id as CVarArg)
             req.fetchLimit = 1
+            
             do {
                 if let entity = try ctx.fetch(req).first {
+                    print("🗑️ ✅ Контакт найден для удаления: \(id)")
                     ctx.delete(entity)
+                } else {
+                    print("🗑️ ❌ Контакт НЕ найден для удаления: \(id)")
                 }
             } catch {
                 assertionFailure("❌ Fetch for delete ContactEntity error: \(error)")
@@ -317,5 +323,21 @@ class ContactsViewModel: ObservableObject {
 
     func loadNotificationSettings() {
         globalNotificationSettings = NotificationSettings.load()
+    }
+    
+    // MARK: - Storage Mode Observer
+    
+    private func setupStorageModeObserver() {
+        NotificationCenter.default.addObserver(
+            forName: .storageModeSwitched,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            print("🔄 ContactsViewModel: режим хранения изменен")
+            // Перезагружаем данные при смене режима
+            Task { @MainActor in
+                self?.loadContactsFromCoreData()
+            }
+        }
     }
 }
