@@ -7,19 +7,11 @@ import CoreData
 class HolidaysViewModel: ObservableObject {
     @Published var holidays: [Holiday] = []
     @Published var searchText: String = ""
-    private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Init
     init() {
         loadFromCoreData()
-        NotificationCenter.default.publisher(for: .NSManagedObjectContextObjectsDidChange,
-                                             object: CoreDataManager.shared.viewContext)
-            .debounce(for: .milliseconds(50), scheduler: DispatchQueue.main)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.loadFromCoreData()
-            }
-            .store(in: &cancellables)
+        setupStorageModeObserver()
     }
 
     // MARK: - Public API (Computed)
@@ -54,16 +46,12 @@ class HolidaysViewModel: ObservableObject {
                     existing = try ctx.fetch(byTitleAndDay).first
                 }
                 let entity: HolidayEntity = existing ?? HolidayEntity(context: ctx)
-                if existing == nil { entity.id = holiday.id }
+                if existing == nil {
+                    entity.id = holiday.id
+                }
                 entity.title = holiday.title
                 entity.date = holiday.date
-                if entity.entity.attributesByName["year"] != nil {
-                    if let y = holiday.year {
-                        entity.setValue(NSNumber(value: y), forKey: "year")
-                    } else {
-                        entity.setValue(nil, forKey: "year")
-                    }
-                }
+                entity.year = Int16(holiday.year ?? 0)
                 entity.type = holiday.type.rawValue
                 entity.icon = holiday.icon
                 entity.isRegional = holiday.isRegional
@@ -92,13 +80,7 @@ class HolidaysViewModel: ObservableObject {
                 if let entity = try ctx.fetch(req).first {
                     entity.title = holiday.title
                     entity.date = holiday.date
-                    if entity.entity.attributesByName["year"] != nil {
-                        if let y = holiday.year {
-                            entity.setValue(NSNumber(value: y), forKey: "year")
-                        } else {
-                            entity.setValue(nil, forKey: "year")
-                        }
-                    }
+                    entity.year = Int16(holiday.year ?? 0)
                     entity.type = holiday.type.rawValue
                     entity.icon = holiday.icon
                     entity.isRegional = holiday.isRegional
@@ -118,19 +100,19 @@ class HolidaysViewModel: ObservableObject {
     func deleteHoliday(_ holiday: Holiday) {
         CoreDataManager.shared.performBackgroundTask(author: "deleteHoliday") { ctx in
             let req: NSFetchRequest<HolidayEntity> = HolidayEntity.fetchRequest()
-            req.fetchLimit = 1
             req.predicate = NSPredicate(format: "id == %@", holiday.id as CVarArg)
+            req.fetchLimit = 1
+            
             do {
                 if let entity = try ctx.fetch(req).first {
+                    print("🗑️ ✅ Праздник найден для удаления: \(holiday.id)")
                     ctx.delete(entity)
                     try ctx.save()
                     #if DEBUG
                     print("🗑 Core Data: bgContext(deleteHoliday) сохранён")
                     #endif
                 } else {
-                    #if DEBUG
-                    print("⚠️ HolidayEntity not found for delete: \(holiday.id)")
-                    #endif
+                    print("🗑️ ❌ Праздник НЕ найден для удаления: \(holiday.id)")
                 }
             } catch {
                 assertionFailure("❌ deleteHoliday fetch error: \(error)")
@@ -151,6 +133,7 @@ class HolidaysViewModel: ObservableObject {
     @MainActor private func loadFromCoreData() {
         let ctx = CoreDataManager.shared.viewContext
         ctx.perform { [weak self] in
+            // Загружаем все праздники
             let req: NSFetchRequest<HolidayEntity> = HolidayEntity.fetchRequest()
             do {
                 let items = try ctx.fetch(req)
@@ -168,11 +151,9 @@ class HolidaysViewModel: ObservableObject {
     }
 
     private func toModel(_ e: HolidayEntity) -> Holiday {
-        let hasYear = e.entity.attributesByName["year"] != nil
         let mappedYear: Int? = {
-            guard hasYear else { return nil }
-            let raw = e.value(forKey: "year") as? NSNumber
-            guard let y = raw?.intValue, y >= 1900 else { return nil }
+            let y = Int(e.year)
+            guard y >= 1900 else { return nil }
             return y
         }()
         return Holiday(
@@ -185,5 +166,21 @@ class HolidaysViewModel: ObservableObject {
             isRegional: e.isRegional,
             isCustom: e.isCustom
         )
+    }
+    
+    // MARK: - Storage Mode Observer
+    
+    private func setupStorageModeObserver() {
+        NotificationCenter.default.addObserver(
+            forName: .storageModeSwitched,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            print("🔄 HolidaysViewModel: режим хранения изменен")
+            // Перезагружаем данные при смене режима
+            Task { @MainActor in
+                self?.loadFromCoreData()
+            }
+        }
     }
 }

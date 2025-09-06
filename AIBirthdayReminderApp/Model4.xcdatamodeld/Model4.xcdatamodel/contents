@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23788.4" systemVersion="24G90" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="YES" usedWithSwiftData="YES" userDefinedModelVersionIdentifier="">
-    <entity name="CardHistoryEntity" representedClassName=".CardHistoryEntity" syncable="YES" codeGenerationType="class">
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23788.4" systemVersion="24G90" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="YES" userDefinedModelVersionIdentifier="">
+    <entity name="CardHistoryEntity" representedClassName="CardHistoryEntity" syncable="YES" codeGenerationType="class">
         <attribute name="cardID" optional="YES" attributeType="String"/>
         <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="holidayID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="imageData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
+        <attribute name="imageData" optional="YES" attributeType="Binary"/>
         <relationship name="contact" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="ContactEntity" inverseName="cardHistory" inverseEntity="ContactEntity"/>
         <fetchIndex name="CardHistoryByDate">
             <fetchIndexElement property="date" type="Binary" order="ascending"/>
             <fetchIndexElement property="holidayID" type="Binary" order="ascending"/>
         </fetchIndex>
     </entity>
-    <entity name="CongratsHistoryEntity" representedClassName=".CongratsHistoryEntity" syncable="YES" codeGenerationType="class">
+    <entity name="CongratsHistoryEntity" representedClassName="CongratsHistoryEntity" syncable="YES" codeGenerationType="class">
         <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="holidayID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
@@ -23,7 +23,7 @@
             <fetchIndexElement property="holidayID" type="Binary" order="ascending"/>
         </fetchIndex>
     </entity>
-    <entity name="ContactEntity" representedClassName=".ContactEntity" syncable="YES" codeGenerationType="class">
+    <entity name="ContactEntity" representedClassName="ContactEntity" syncable="YES" codeGenerationType="class">
         <attribute name="additionalInfo" optional="YES" attributeType="String"/>
         <attribute name="birthdayDay" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
         <attribute name="birthdayMonth" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
@@ -47,7 +47,7 @@
         <relationship name="cardHistory" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="CardHistoryEntity" inverseName="contact" inverseEntity="CardHistoryEntity"/>
         <relationship name="congratsHistory" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="CongratsHistoryEntity" inverseName="contact" inverseEntity="CongratsHistoryEntity"/>
     </entity>
-    <entity name="HolidayEntity" representedClassName=".HolidayEntity" syncable="YES" codeGenerationType="class">
+    <entity name="HolidayEntity" representedClassName="HolidayEntity" syncable="YES" codeGenerationType="class">
         <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="icon" optional="YES" attributeType="String"/>
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>

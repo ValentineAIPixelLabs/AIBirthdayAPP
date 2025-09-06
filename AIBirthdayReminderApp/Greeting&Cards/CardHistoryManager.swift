@@ -168,15 +168,17 @@ final class CardHistoryManager {
         CoreDataManager.shared.performBackgroundTask(author: "deleteCard") { ctx in
             let request: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
             request.fetchLimit = 1
+            
             request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
-
+            
             do {
                 if let entity = try ctx.fetch(request).first {
+                    print("🗑️ ✅ Открытка найдена для удаления: \(id)")
                     ctx.delete(entity)
                     try ctx.save()
                     print("🗑 Открытка удалена и сохранена: \(id)")
                 } else {
-                    print("❌ Открытка с id \(id) не найдена")
+                    print("🗑️ ❌ Открытка НЕ найдена для удаления: \(id)")
                 }
             } catch {
                 assertionFailure("❌ Ошибка выборки открытки для удаления: \(error)")

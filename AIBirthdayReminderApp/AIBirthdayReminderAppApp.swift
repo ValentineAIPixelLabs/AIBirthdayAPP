@@ -17,8 +17,11 @@ struct AIBirthdayReminderAppApp: App {
     @StateObject private var lang = LanguageManager()
     @StateObject private var holidaysVM = HolidaysViewModel()
     init() {
-        _ = CoreDataManager.shared // инициализируем стек Core Data + CloudKit
+        _ = CoreDataManager.shared // инициализируем локальный стек Core Data
+        
+        #if DEBUG
         setupCloudKitEventLogging()
+        #endif
         NotificationManager.shared.requestAuthorization()
         let appearance = UITabBarAppearance()
         appearance.configureWithDefaultBackground()
@@ -32,42 +35,61 @@ struct AIBirthdayReminderAppApp: App {
         }
     }
 
-    // DEBUG: Логирование событий синхронизации CloudKit и проверка схемы модели
+    #if DEBUG
+    // CloudKit event logging for development
     private func setupCloudKitEventLogging() {
-        let container = CoreDataManager.shared.persistentContainer
+        // Настраиваем логирование только если CloudKit активен
+        NotificationCenter.default.addObserver(
+            forName: .storageModeSwitched,
+            object: nil,
+            queue: .main
+        ) { notification in
+            if let mode = notification.object as? CoreDataManager.StorageMode, mode == .cloudKit {
+                self.startCloudKitLogging()
+            }
+        }
+        
+        // Если уже в CloudKit режиме, запускаем логирование сразу
+        if CoreDataManager.shared.isCloudKitEnabled {
+            startCloudKitLogging()
+        }
+    }
+    
+    private func startCloudKitLogging() {
+        guard let container = CoreDataManager.shared.persistentContainer as? NSPersistentCloudKitContainer else { return }
+        
         NotificationCenter.default.addObserver(
             forName: NSPersistentCloudKitContainer.eventChangedNotification,
             object: container,
             queue: .main
         ) { note in
-            guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey] as? NSPersistentCloudKitContainer.Event else { return }
-            #if DEBUG
+            guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey] as? NSPersistentCloudKitContainer.Event,
+                  let error = event.error else { return }
             
-            if let ckError = event.error as? CKError {
-                print("⚠️ CloudKit CKError: \(ckError.code) — \(ckError.localizedDescription)")
-                if ckError.code == .quotaExceeded { print("🧺 iCloud storage is FULL (quotaExceeded)") }
-            } else if let err = event.error {
-                print("⚠️ CloudKit error: \(err.localizedDescription)")
+            if let ckError = error as? CKError {
+                print("⚠️ CloudKit error: \(ckError.code.rawValue) - \(ckError.localizedDescription)")
+            } else {
+                print("⚠️ CloudKit error: \(error.localizedDescription)")
             }
-            #endif
         }
     }
+    #endif
 
+    #if DEBUG
     private func debugPrintModelInfo() {
         let model = CoreDataManager.shared.persistentContainer.managedObjectModel
-        if let entity = model.entitiesByName["CardHistoryEntity"] {
-            print("▶︎ Unique constraints for CardHistoryEntity:")
-            for (i, group) in entity.uniquenessConstraints.enumerated() {
-                let names = group.compactMap { $0 as? String }.joined(separator: ", ")
-                print("  [\(i)]: \(names)")
+        print("📊 Core Data entities: \(model.entities.count)")
+        
+        // Проверяем ключевые сущности
+        ["ContactEntity", "HolidayEntity", "CardHistoryEntity", "CongratsHistoryEntity"].forEach { entityName in
+            if let entity = model.entitiesByName[entityName] {
+                let constraints = entity.uniquenessConstraints.count
+                let indexes = entity.indexes.count
+                print("  \(entityName): \(constraints) constraints, \(indexes) indexes")
             }
-            // Проверяем индекс поля `date` через Fetch Indexes (современный способ)
-            let hasDateIndex = entity.indexes.contains { index in
-                index.elements.contains { $0.property?.name == "date" }
-            }
-            print("▶︎ 'date' indexed via Fetch Indexes: \(hasDateIndex ? "YES" : "NO")")
         }
     }
+    #endif
 
     var body: some Scene {
         WindowGroup {

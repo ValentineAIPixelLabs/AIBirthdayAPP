@@ -42,6 +42,13 @@ import UIKit
     func signOut() {
         UserDefaults.standard.removeObject(forKey: appleIdKey)
         try? KeychainStore.delete(jwtTokenKey)
+        
+        // Переключаем CoreDataManager на локальный режим
+        CoreDataManager.shared.disableCloudKit()
+        print("✅ Переключение на локальный режим после выхода")
+        
+        // Уведомляем о смене пользователя
+        NotificationCenter.default.post(name: .userDidSignOut, object: nil)
     }
 
     func refreshCredentialState(completion: @escaping (ASAuthorizationAppleIDProvider.CredentialState) -> Void) {
@@ -114,6 +121,19 @@ extension AppleSignInManager: ASAuthorizationControllerDelegate {
                 }
 
                 print("✅ Sign in with Apple completed")
+                
+                // Переключаем CoreDataManager на CloudKit режим с принудительной синхронизацией
+                Task {
+                    do {
+                        try await CoreDataManager.shared.forceSyncWithCloudKit()
+                        print("✅ CloudKit режим активирован после входа")
+                    } catch {
+                        print("❌ Ошибка активации CloudKit: \(error)")
+                    }
+                }
+                
+                // Уведомляем о смене пользователя
+                NotificationCenter.default.post(name: .userDidSignIn, object: nil)
             }
         }.resume()
     }
@@ -214,4 +234,10 @@ private extension AppleSignInManager {
         let hashed = SHA256.hash(data: Data(input.utf8))
         return hashed.compactMap { String(format: "%02x", $0) }.joined()
     }
+}
+
+// MARK: - Notifications for user switching
+extension Notification.Name {
+    static let userDidSignIn = Notification.Name("userDidSignIn")
+    static let userDidSignOut = Notification.Name("userDidSignOut")
 }
