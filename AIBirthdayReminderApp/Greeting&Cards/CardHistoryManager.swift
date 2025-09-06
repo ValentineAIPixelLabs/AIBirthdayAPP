@@ -27,16 +27,33 @@ final class CardHistoryManager {
                     return
                 }
 
-                // Upsert по id, чтобы не создавать дубликаты (CloudKit не поддерживает Unique Constraints)
-                let req: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
-                req.fetchLimit = 1
-                req.predicate = NSPredicate(format: "id == %@", item.id as CVarArg)
+                // Сначала ищем по id
+                let byId: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
+                byId.fetchLimit = 1
+                byId.predicate = NSPredicate(format: "id == %@", item.id as CVarArg)
 
-                let entity = try ctx.fetch(req).first ?? {
+                // Если по id не нашли, пытаемся дедуплицировать по (contact + день(date) + cardID)
+                let day = Calendar.current.startOfDay(for: item.date)
+                let nextDay = Calendar.current.date(byAdding: .day, value: 1, to: day)!
+                let byContactCardAndDay: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
+                byContactCardAndDay.fetchLimit = 1
+                byContactCardAndDay.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                    NSPredicate(format: "contact == %@", contact),
+                    NSPredicate(format: "cardID == %@", item.cardID),
+                    NSPredicate(format: "date >= %@ AND date < %@", day as NSDate, nextDay as NSDate)
+                ])
+
+                let entity: CardHistoryEntity
+                if let found = try ctx.fetch(byId).first {
+                    entity = found
+                } else if let dup = try ctx.fetch(byContactCardAndDay).first {
+                    entity = dup
+                    if entity.id == nil { entity.id = item.id }
+                } else {
                     let e = CardHistoryEntity(context: ctx)
                     e.id = item.id
-                    return e
-                }()
+                    entity = e
+                }
                 entity.date = item.date
                 entity.cardID = item.cardID
                 // JPEG обычно заметно меньше PNG. При включенном Allows External Storage большие данные уйдут в CKAsset.
@@ -67,7 +84,7 @@ final class CardHistoryManager {
     static func getCards(for contactId: UUID) -> [CardHistoryItemWithImage] {
         let request: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
         request.predicate = NSPredicate(format: "contact.id == %@", contactId as CVarArg)
-        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \CardHistoryEntity.date, ascending: false)]
         request.fetchBatchSize = 50
 
         do {
@@ -90,16 +107,32 @@ final class CardHistoryManager {
     /// Добавить открытку по празднику (без привязки к контакту)
     static func addCardForHoliday(item: CardHistoryItem, image: UIImage, holidayId: UUID, completion: (() -> Void)? = nil) {
         CoreDataManager.shared.performBackgroundTask(author: "addCardHoliday") { ctx in
-            // Upsert по id, чтобы избежать дубликатов
-            let req: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
-            req.fetchLimit = 1
-            req.predicate = NSPredicate(format: "id == %@", item.id as CVarArg)
+            // Сначала ищем по id, затем дедуп по (holidayID + день(date) + cardID)
+            let byId: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
+            byId.fetchLimit = 1
+            byId.predicate = NSPredicate(format: "id == %@", item.id as CVarArg)
 
-            let entity = (try? ctx.fetch(req).first) ?? {
+            let day = Calendar.current.startOfDay(for: item.date)
+            let nextDay = Calendar.current.date(byAdding: .day, value: 1, to: day)!
+            let byHolidayCardAndDay: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
+            byHolidayCardAndDay.fetchLimit = 1
+            byHolidayCardAndDay.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "holidayID == %@", holidayId as CVarArg),
+                NSPredicate(format: "cardID == %@", item.cardID),
+                NSPredicate(format: "date >= %@ AND date < %@", day as NSDate, nextDay as NSDate)
+            ])
+
+            let entity: CardHistoryEntity
+            if let found = (try? ctx.fetch(byId))?.first {
+                entity = found
+            } else if let dup = (try? ctx.fetch(byHolidayCardAndDay))?.first {
+                entity = dup
+                if entity.id == nil { entity.id = item.id }
+            } else {
                 let e = CardHistoryEntity(context: ctx)
                 e.id = item.id
-                return e
-            }()
+                entity = e
+            }
             entity.date = item.date
             entity.cardID = item.cardID
             entity.holidayID = holidayId // <-- поле в модели Core Data
@@ -127,7 +160,7 @@ final class CardHistoryManager {
     static func getCards(forHoliday holidayId: UUID) -> [CardHistoryItemWithImage] {
         let request: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
         request.predicate = NSPredicate(format: "holidayID == %@", holidayId as CVarArg)
-        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \CardHistoryEntity.date, ascending: false)]
         request.fetchBatchSize = 50
 
         do {
