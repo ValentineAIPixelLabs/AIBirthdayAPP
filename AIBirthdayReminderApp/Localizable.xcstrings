@@ -2436,17 +2436,6 @@
         }
       }
     },
-    "keyboard.done" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Готово"
-          }
-        }
-      }
-    },
     "month.unknown" : {
       "extractionState" : "manual",
       "localizations" : {
