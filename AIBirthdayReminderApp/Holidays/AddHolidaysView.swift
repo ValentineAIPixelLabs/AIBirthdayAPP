@@ -51,6 +51,7 @@ struct AddHolidaysView: View {
                         }
                 }
             }
+            .scrollContentBackground(.hidden)
             .navigationTitle(String(localized: "add_holiday.nav.title", defaultValue: "Новый праздник", bundle: appBundle(), locale: appLocale()))
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -89,6 +90,14 @@ struct AddHolidaysView: View {
                 }
             }
             .onAppear { titleFocused = true }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(String(localized: "common.done", defaultValue: "Готово", bundle: appBundle(), locale: appLocale())) {
+                    titleFocused = false
+                }
+            }
         }
     }
 }

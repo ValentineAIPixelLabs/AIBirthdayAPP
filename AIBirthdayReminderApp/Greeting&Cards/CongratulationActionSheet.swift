@@ -23,7 +23,7 @@ struct CongratulationActionSheet: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            // УДАЛИЛИ Capsule (теперь будет только системная полоса)
+            
 
             Text(String(localized: "congrats.sheet.title",
                         defaultValue: "Что вы хотите сгенерировать?",

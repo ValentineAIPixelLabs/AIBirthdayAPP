@@ -1,5 +1,6 @@
 import SwiftUI
 import Contacts
+import UIKit
 // MARK: - Localization helpers (file-local)
 private func appLocale() -> Locale {
     if let code = UserDefaults.standard.string(forKey: "app.language.code") {
@@ -136,10 +137,13 @@ struct EditContactView: View {
         _pickedEmoji = State(initialValue: contact.emoji)
     }
 
+    // Focus management for keyboard dismissal
+    private enum Field: Hashable { case name, surname, nickname, phone, occupation, hobbies, leisure, additionalInfo }
+    @FocusState private var focusedField: Field?
+
     var body: some View {
         ZStack {
-            LinearGradient(gradient: Gradient(colors: [Color.blue.opacity(0.18), Color.purple.opacity(0.16), Color.teal.opacity(0.14)]), startPoint: .topLeading, endPoint: .bottomTrailing)
-                .ignoresSafeArea()
+            AppBackground()
 
             Form {
                 AvatarHeaderSection(
@@ -161,8 +165,11 @@ struct EditContactView: View {
 
                 Section(header: Text(String(localized: "add.section.main_info", defaultValue: "Основная информация", bundle: appBundle(), locale: appLocale()))) {
                     TextField(String(localized: "add.name", defaultValue: "Имя", bundle: appBundle(), locale: appLocale()), text: $name)
+                        .focused($focusedField, equals: .name)
                     TextField(String(localized: "add.surname.optional", defaultValue: "Фамилия (необязательно)", bundle: appBundle(), locale: appLocale()), text: $surname)
+                        .focused($focusedField, equals: .surname)
                     TextField(String(localized: "add.nickname.optional", defaultValue: "Прозвище (необязательно)", bundle: appBundle(), locale: appLocale()), text: $nickname)
+                        .focused($focusedField, equals: .nickname)
                     Picker(String(localized: "add.relation", defaultValue: "Отношения", bundle: appBundle(), locale: appLocale()), selection: $relation) {
                         ForEach(relations, id: \.self) { Text(localizedRelationTitle($0)) }
                     }
@@ -171,6 +178,7 @@ struct EditContactView: View {
                     }
                     TextField(String(localized: "add.phone", defaultValue: "Телефон", bundle: appBundle(), locale: appLocale()), text: $phoneNumber)
                         .keyboardType(.phonePad)
+                        .focused($focusedField, equals: .phone)
                 }
 
                 Section(header: Text(String(localized: "add.section.birthday", defaultValue: "Дата рождения", bundle: appBundle(), locale: appLocale()))) {
@@ -188,6 +196,9 @@ struct EditContactView: View {
                         TextEditor(text: $occupation)
                             .frame(minHeight: 64)
                             .font(.body)
+                            .autocorrectionDisabled(true)
+                            .textInputAutocapitalization(.sentences)
+                            .focused($focusedField, equals: .occupation)
                     }
                 }
 
@@ -202,6 +213,9 @@ struct EditContactView: View {
                         TextEditor(text: $hobbies)
                             .frame(minHeight: 64)
                             .font(.body)
+                            .autocorrectionDisabled(true)
+                            .textInputAutocapitalization(.sentences)
+                            .focused($focusedField, equals: .hobbies)
                     }
                 }
 
@@ -216,6 +230,9 @@ struct EditContactView: View {
                         TextEditor(text: $leisure)
                             .frame(minHeight: 64)
                             .font(.body)
+                            .autocorrectionDisabled(true)
+                            .textInputAutocapitalization(.sentences)
+                            .focused($focusedField, equals: .leisure)
                     }
                 }
 
@@ -230,6 +247,9 @@ struct EditContactView: View {
                         TextEditor(text: $additionalInfo)
                             .frame(minHeight: 64)
                             .font(.body)
+                            .autocorrectionDisabled(true)
+                            .textInputAutocapitalization(.sentences)
+                            .focused($focusedField, equals: .additionalInfo)
                     }
                 }
 
@@ -241,7 +261,9 @@ struct EditContactView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
             .scrollDismissesKeyboard(.interactively)
+            .onTapGesture { focusedField = nil }
             .navigationBarBackButtonHidden(true)
         }
         .toolbar {
@@ -253,6 +275,14 @@ struct EditContactView: View {
             }
             ToolbarItem(placement: .cancellationAction) {
                 Button(String(localized: "common.cancel", defaultValue: "Отмена", bundle: appBundle(), locale: appLocale())) { dismiss() }
+            }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(String(localized: "common.done", defaultValue: "Готово", bundle: appBundle(), locale: appLocale())) {
+                    focusedField = nil
+                }
             }
         }
         

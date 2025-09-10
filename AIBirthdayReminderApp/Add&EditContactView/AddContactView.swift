@@ -95,11 +95,6 @@ struct AddContactView: View {
     @State private var showPhonePickerAlert = false
     @State private var phoneNumbersFromContact: [String] = []
 
-    @FocusState private var focusedField: Field?
-
-    private enum Field: Hashable {
-        case name, surname, nickname, phone, occupation, hobbies, leisure, additional
-    }
 
     private let relations = [Contact.unspecified, "Брат", "Сестра", "Отец", "Мать", "Бабушка", "Дедушка", "Сын", "Дочь", "Коллега", "Руководитель", "Начальник", "Товарищ", "Друг", "Лучший друг", "Супруг", "Супруга", "Партнер", "Девушка", "Парень", "Клиент"]
     private let genders = [Contact.unspecified, "Мужской", "Женский"]
@@ -119,6 +114,10 @@ struct AddContactView: View {
         })
     }
 
+    // Focus management for keyboard dismissal
+    private enum Field: Hashable { case name, surname, nickname, phone, occupation, hobbies, leisure, additionalInfo }
+    @FocusState private var focusedField: Field?
+
     var body: some View {
         ZStack {
             AppBackground()
@@ -131,9 +130,8 @@ struct AddContactView: View {
                         } else if let emoji = pickedEmoji {
                             return .emoji(emoji)
                         } else {
-                            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                            let initial = trimmed.isEmpty ? (pickedMonogram ?? "A") : String(trimmed.first!).uppercased()
-                            return .monogram(initial)
+                            let initial = name.trimmingCharacters(in: .whitespacesAndNewlines).first.map { String($0) } ?? "?"
+                            return .monogram(initial.uppercased())
                         }
                     }(),
                     shape: .circle,
@@ -144,29 +142,11 @@ struct AddContactView: View {
 
                 Section(header: Text(String(localized: "add.section.main_info", defaultValue: "Основная информация", bundle: appBundle(), locale: appLocale()))) {
                     TextField(String(localized: "add.name", defaultValue: "Имя", bundle: appBundle(), locale: appLocale()), text: $name)
-                        .textInputAutocapitalization(.words)
-                        .autocorrectionDisabled(true)
-                        .textContentType(.givenName)
-                        .font(.body)
                         .focused($focusedField, equals: .name)
-                        .submitLabel(.next)
-                        .onSubmit { focusedField = .surname }
                     TextField(String(localized: "add.surname.optional", defaultValue: "Фамилия (необязательно)", bundle: appBundle(), locale: appLocale()), text: $surname)
-                        .textInputAutocapitalization(.words)
-                        .autocorrectionDisabled(true)
-                        .textContentType(.familyName)
-                        .font(.body)
                         .focused($focusedField, equals: .surname)
-                        .submitLabel(.next)
-                        .onSubmit { focusedField = .nickname }
                     TextField(String(localized: "add.nickname.optional", defaultValue: "Прозвище (необязательно)", bundle: appBundle(), locale: appLocale()), text: $nickname)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                        .textContentType(.nickname)
-                        .font(.body)
                         .focused($focusedField, equals: .nickname)
-                        .submitLabel(.next)
-                        .onSubmit { focusedField = .phone }
                     Picker(String(localized: "add.relation", defaultValue: "Отношения", bundle: appBundle(), locale: appLocale()), selection: $relation) {
                         ForEach(relations, id: \.self) { Text(localizedRelationTitle($0)) }
                     }
@@ -175,12 +155,7 @@ struct AddContactView: View {
                     }
                     TextField(String(localized: "add.phone", defaultValue: "Телефон", bundle: appBundle(), locale: appLocale()), text: $phoneNumber)
                         .keyboardType(.phonePad)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                        .textContentType(.telephoneNumber)
-                        .font(.body)
                         .focused($focusedField, equals: .phone)
-                        .submitLabel(.done)
                 }
                 
                 Section(header: Text(String(localized: "add.section.birthday", defaultValue: "Дата рождения", bundle: appBundle(), locale: appLocale()))) {
@@ -188,88 +163,84 @@ struct AddContactView: View {
                 }
                 
                 Section(header: Text(String(localized: "add.section.occupation", defaultValue: "Род деятельности / Профессия", bundle: appBundle(), locale: appLocale()))) {
-                    ZStack(alignment: .topLeading) {
-                        if occupation.isEmpty {
-                            Text(String(localized: "add.occupation.placeholder", defaultValue: "Кем работает / На кого учится…", bundle: appBundle(), locale: appLocale()))
-                                .foregroundColor(Color(UIColor.placeholderText))
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 8)
+                    TextEditor(text: $occupation)
+                        .frame(minHeight: 64)
+                        .font(.body)
+                        .autocorrectionDisabled(true)
+                        .textInputAutocapitalization(.sentences)
+                        .focused($focusedField, equals: .occupation)
+                        .overlay(alignment: .topLeading) {
+                            if occupation.isEmpty {
+                                Text(String(localized: "add.occupation.placeholder", defaultValue: "Кем работает / На кого учится…", bundle: appBundle(), locale: appLocale()))
+                                    .foregroundColor(Color(UIColor.placeholderText))
+                                    .padding(.top, 8)
+                                    .padding(.leading, 6)
+                            }
                         }
-                        TextEditor(text: $occupation)
-                            .frame(minHeight: 64)
-                            .font(.body)
-                            .autocorrectionDisabled(true)
-                            .textInputAutocapitalization(.sentences)
-                            .focused($focusedField, equals: .occupation)
-                    }
                 }
 
                 Section(header: Text(String(localized: "add.section.hobbies", defaultValue: "Увлечения / Хобби", bundle: appBundle(), locale: appLocale()))) {
-                    ZStack(alignment: .topLeading) {
-                        if hobbies.isEmpty {
-                            Text(String(localized: "add.hobbies.placeholder", defaultValue: "Например, спорт, рыбалка, путешествия…", bundle: appBundle(), locale: appLocale()))
-                                .foregroundColor(Color(UIColor.placeholderText))
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 8)
+                    TextEditor(text: $hobbies)
+                        .frame(minHeight: 64)
+                        .font(.body)
+                        .autocorrectionDisabled(true)
+                        .textInputAutocapitalization(.sentences)
+                        .focused($focusedField, equals: .hobbies)
+                        .overlay(alignment: .topLeading) {
+                            if hobbies.isEmpty {
+                                Text(String(localized: "add.hobbies.placeholder", defaultValue: "Например, спорт, рыбалка, путешествия…", bundle: appBundle(), locale: appLocale()))
+                                    .foregroundColor(Color(UIColor.placeholderText))
+                                    .padding(.top, 8)
+                                    .padding(.leading, 6)
+                            }
                         }
-                        TextEditor(text: $hobbies)
-                            .frame(minHeight: 64)
-                            .font(.body)
-                            .autocorrectionDisabled(true)
-                            .textInputAutocapitalization(.sentences)
-                            .focused($focusedField, equals: .hobbies)
-                    }
                 }
 
                 Section(header: Text(String(localized: "add.section.leisure", defaultValue: "Как любит проводить свободное время", bundle: appBundle(), locale: appLocale()))) {
-                    ZStack(alignment: .topLeading) {
-                        if leisure.isEmpty {
-                            Text(String(localized: "add.leisure.placeholder", defaultValue: "Прогулки, чтение, игры, волонтёрство…", bundle: appBundle(), locale: appLocale()))
-                                .foregroundColor(Color(UIColor.placeholderText))
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 8)
+                    TextEditor(text: $leisure)
+                        .frame(minHeight: 64)
+                        .font(.body)
+                        .autocorrectionDisabled(true)
+                        .textInputAutocapitalization(.sentences)
+                        .focused($focusedField, equals: .leisure)
+                        .overlay(alignment: .topLeading) {
+                            if leisure.isEmpty {
+                                Text(String(localized: "add.leisure.placeholder", defaultValue: "Прогулки, чтение, игры, волонтёрство…", bundle: appBundle(), locale: appLocale()))
+                                    .foregroundColor(Color(UIColor.placeholderText))
+                                    .padding(.top, 8)
+                                    .padding(.leading, 6)
+                            }
                         }
-                        TextEditor(text: $leisure)
-                            .frame(minHeight: 64)
-                            .font(.body)
-                            .autocorrectionDisabled(true)
-                            .textInputAutocapitalization(.sentences)
-                            .focused($focusedField, equals: .leisure)
-                    }
                 }
 
                 Section(header: Text(String(localized: "add.section.additional", defaultValue: "Дополнительная информация", bundle: appBundle(), locale: appLocale()))) {
-                    ZStack(alignment: .topLeading) {
-                        if additionalInfo.isEmpty {
-                            Text(String(localized: "add.additional.placeholder", defaultValue: "Что-то ещё важное…", bundle: appBundle(), locale: appLocale()))
-                                .foregroundColor(Color(UIColor.placeholderText))
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 8)
+                    TextEditor(text: $additionalInfo)
+                        .frame(minHeight: 64)
+                        .font(.body)
+                        .autocorrectionDisabled(true)
+                        .textInputAutocapitalization(.sentences)
+                        .focused($focusedField, equals: .additionalInfo)
+                        .overlay(alignment: .topLeading) {
+                            if additionalInfo.isEmpty {
+                                Text(String(localized: "add.additional.placeholder", defaultValue: "Что-то ещё важное…", bundle: appBundle(), locale: appLocale()))
+                                    .foregroundColor(Color(UIColor.placeholderText))
+                                    .padding(.top, 8)
+                                    .padding(.leading, 6)
+                            }
                         }
-                        TextEditor(text: $additionalInfo)
-                            .frame(minHeight: 64)
-                            .font(.body)
-                            .autocorrectionDisabled(true)
-                            .textInputAutocapitalization(.sentences)
-                            .focused($focusedField, equals: .additional)
-                    }
                 }
 
             }
+            .scrollContentBackground(.hidden)
             .scrollDismissesKeyboard(.interactively)
+            .onTapGesture { focusedField = nil }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button(String(localized: "common.add", defaultValue: "Добавить", bundle: appBundle(), locale: appBundle().preferredLocalizations.first.map { Locale(identifier: $0) } ?? appLocale())) {
-                        saveContact()
-                    }
-                    .disabled(!isSaveEnabled)
-                }
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button(String(localized: "keyboard.done", defaultValue: "Готово", bundle: appBundle(), locale: appLocale())) {
-                        focusedField = nil
-                    }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(String(localized: "common.done", defaultValue: "Готово", bundle: appBundle(), locale: appLocale())) {
+                    focusedField = nil
                 }
             }
         }

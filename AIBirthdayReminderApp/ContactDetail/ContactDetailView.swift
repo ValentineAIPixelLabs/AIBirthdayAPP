@@ -9,6 +9,9 @@ struct ContactDetailView: View {
 
     @Environment(\.dismiss) var dismiss
     @State private var isEditActive = false
+    @State private var showCongratsSheet = false
+    @State private var isCongratsActive = false
+    @State private var selectedCongratsMode: String? = nil
 
     var contact: Contact? {
         vm.contacts.first(where: { $0.id == contactId })
@@ -79,6 +82,7 @@ struct ContactDetailView: View {
                         VStack(spacing: 12) {
                             headerBlock(contact: contact)
                             birthdayBlock(contact: contact)
+                            phoneBlock(contact: contact)
                             occupationBlock(contact: contact)
                             hobbiesBlock(contact: contact)
                             leisureBlock(contact: contact)
@@ -110,6 +114,31 @@ struct ContactDetailView: View {
                 EditContactView(vm: vm, contact: contact)
             } else {
                 EmptyView()
+            }
+        }
+        .navigationDestination(isPresented: $isCongratsActive) {
+            if let c = contact,
+               let idx = vm.contacts.firstIndex(where: { $0.id == c.id }),
+               let mode = selectedCongratsMode {
+                ContactCongratsView(contact: $vm.contacts[idx], selectedMode: mode)
+            } else {
+                EmptyView()
+            }
+        }
+        .sheet(isPresented: $showCongratsSheet) {
+            if contact != nil {
+                CongratulationActionSheet(
+                    onGenerateText: {
+                        selectedCongratsMode = "text"
+                        showCongratsSheet = false
+                        isCongratsActive = true
+                    },
+                    onGenerateCard: {
+                        selectedCongratsMode = "card"
+                        showCongratsSheet = false
+                        isCongratsActive = true
+                    }
+                )
             }
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -291,11 +320,39 @@ struct ContactDetailView: View {
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
+    // MARK: - PhoneBlock
+    private func phoneBlock(contact: Contact) -> some View {
+        Group {
+            if let phone = contact.phoneNumber, !phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                HStack(spacing: CardStyle.Detail.spacing) {
+                    Image(systemName: "phone.fill")
+                        .foregroundColor(.green)
+                        .font(.system(size: CardStyle.Detail.iconSize))
+                    Text(phone)
+                        .font(CardStyle.Detail.font)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer()
+                }
+                .padding(.vertical, CardStyle.Detail.verticalPadding)
+                .padding(.horizontal, CardStyle.Detail.innerHorizontalPadding)
+                .cardBackground()
+                .padding(.top, 6)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
     // MARK: - DescriptionBlock (удалён)
 
-    // MARK: - ActionsPanel (кнопки генерации удалены)
+    // MARK: - ActionsPanel
     private func actionsPanel(contact: Contact) -> some View {
-        EmptyView()
+        VStack(spacing: 10) {
+            CongratulateButton {
+                showCongratsSheet = true
+            }
+        }
     }
 
     // MARK: - Birthday Date Formatter
