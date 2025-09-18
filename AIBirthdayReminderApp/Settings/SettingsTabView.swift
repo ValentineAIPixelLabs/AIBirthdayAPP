@@ -10,8 +10,8 @@ import ContactsUI
     @State private var isMultiPickerPresented = false
     @State private var showImportAlert = false
     @State private var importAlertMessage = ""
-    @State private var showStore = false
-    @State private var showStoreAuthAlert = false
+    @State private var showSubscription = false
+    @State private var showSubscriptionAuthAlert = false
     @State private var showImportOptions = false
     @AppStorage("apple_id") private var appleId: String?
     @State private var showAuthScreen = false
@@ -26,12 +26,12 @@ import ContactsUI
                 Section(header: Text("settings.purchases.header")) {
                     Button {
                         if appleId == nil {
-                            showStoreAuthAlert = true
+                            showSubscriptionAuthAlert = true
                         } else {
-                            showStore = true
+                            showSubscription = true
                         }
                     } label: {
-                        Label("store.title", systemImage: "cart")
+                        Label("Подписка", systemImage: "star.circle")
                             .font(.headline)
                             .padding(.vertical, 8)
                     }
@@ -165,7 +165,7 @@ import ContactsUI
             }
             .alert(
                 "store.auth.required.title",
-                isPresented: $showStoreAuthAlert
+                isPresented: $showSubscriptionAuthAlert
             ) {
                 Button("common.cancel", role: .cancel) { }
                 Button("common.signin") {
@@ -174,9 +174,8 @@ import ContactsUI
             } message: {
                 Text("store.auth.required.message")
             }
-            .sheet(isPresented: $showStore) {
-                // Present StoreView modally; it already manages its own navigation
-                StoreView()
+            .fullScreenCover(isPresented: $showSubscription) {
+                PaywallView()
             }
             .fullScreenCover(isPresented: $showAuthScreen) {
                 SignInView(isSignedIn: Binding(

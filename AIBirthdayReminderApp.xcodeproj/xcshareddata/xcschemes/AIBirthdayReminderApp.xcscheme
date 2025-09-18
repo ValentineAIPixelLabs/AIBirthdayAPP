@@ -92,7 +92,7 @@
          </EnvironmentVariable>
       </EnvironmentVariables>
       <StoreKitConfigurationFileReference
-         identifier = "../../AIBirthdayReminderApp/Settings/LocalStoreKit.storekit">
+         identifier = "../../AIBirthdayReminderApp/Settings/AI Birthday Reminder.storekit">
       </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction
