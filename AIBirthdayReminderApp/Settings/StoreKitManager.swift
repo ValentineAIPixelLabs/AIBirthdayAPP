@@ -8,6 +8,7 @@ final class StoreKitManager: ObservableObject {
         didSet { UserDefaults.standard.set(purchasedTokenCount, forKey: Self.tokensKey) }
     }
     @Published var hasPremium: Bool = false
+    @Published var activeSubscriptionProductId: String? = nil
     
     // Listener task for StoreKit transaction updates
     private var transactionUpdatesTask: Task<Void, Never>?
@@ -27,9 +28,9 @@ final class StoreKitManager: ObservableObject {
         "com.aibirthday.tokens1200"
     ]
     let subscriptionIDs: Set<String> = [
-        "com.aibirthday.premium_week",
-        "com.aibirthday.premium_month",
-        "com.aibirthday.premium_year"
+        "com.aibirthday.weekly",
+        "com.aibirthday.monthly",
+        "com.aibirthday.yearly"
     ]
 
     // MARK: - Backend wiring
@@ -67,18 +68,18 @@ final class StoreKitManager: ObservableObject {
     }
 
     private func periodFor(productId: String) -> String? {
-        if productId.contains("premium_week") { return "week" }
-        if productId.contains("premium_month") { return "month" }
-        if productId.contains("premium_year") { return "year" }
+        if productId.contains("weekly") { return "week" }
+        if productId.contains("monthly") { return "month" }
+        if productId.contains("yearly") { return "year" }
         return nil
     }
 
     private func approxExpiry(for productId: String, from start: Date = Date()) -> Date {
-        if productId.contains("premium_week") {
+        if productId.contains("weekly") {
             return Calendar.current.date(byAdding: .day, value: 7, to: start) ?? start
-        } else if productId.contains("premium_month") {
+        } else if productId.contains("monthly") {
             return Calendar.current.date(byAdding: .month, value: 1, to: start) ?? start
-        } else if productId.contains("premium_year") {
+        } else if productId.contains("yearly") {
             return Calendar.current.date(byAdding: .year, value: 1, to: start) ?? start
         }
         return start
@@ -129,6 +130,7 @@ final class StoreKitManager: ObservableObject {
                 if let decoded = try? JSONDecoder().decode(SubscriptionStatus.self, from: data) {
                     if let left = decoded.tokens_left { self.setBalance(left) }
                     if let active = decoded.active { self.hasPremium = active }
+                    if let pid = decoded.product_id { self.activeSubscriptionProductId = pid }
                 }
             }
         } catch { /* ignore network blips */ }
@@ -147,6 +149,7 @@ final class StoreKitManager: ObservableObject {
                 if let decoded = try? JSONDecoder().decode(SubscriptionStatus.self, from: data) {
                     if let left = decoded.tokens_left { self.setBalance(left) }
                     if let active = decoded.active { self.hasPremium = active }
+                    if let pid = decoded.product_id { self.activeSubscriptionProductId = pid }
                 }
             }
         } catch { /* ignore */ }
@@ -238,15 +241,20 @@ final class StoreKitManager: ObservableObject {
     /// Refresh current subscription status based on current entitlements
     func refreshSubscriptionStatus() async {
         var premium = false
+        var currentId: String? = nil
         for await entitlement in Transaction.currentEntitlements {
             switch entitlement {
             case .verified(let t):
-                if subscriptionIDs.contains(t.productID) { premium = true }
+                if subscriptionIDs.contains(t.productID) {
+                    premium = true
+                    currentId = t.productID
+                }
             case .unverified:
                 continue
             }
         }
         if hasPremium != premium { hasPremium = premium }
+        if activeSubscriptionProductId != currentId { activeSubscriptionProductId = currentId }
     }
 
     /// Helper to unwrap verified transactions
@@ -309,6 +317,7 @@ final class StoreKitManager: ObservableObject {
             print("[Store] Tokens updated, current balance: \(purchasedTokenCount)")
         } else if subscriptionIDs.contains(productId) {
             hasPremium = true
+            activeSubscriptionProductId = productId
             print("Premium подписка активирована!")
             let period = periodFor(productId: productId) ?? "month"
             // Try to use StoreKit expiration if available; fall back to approx

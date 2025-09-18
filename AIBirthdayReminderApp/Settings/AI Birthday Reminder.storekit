@@ -9,59 +9,62 @@
       }
     ]
   },
-  "identifier" : "2EADC9D3",
+  "identifier" : "251DAF08",
   "nonRenewingSubscriptions" : [
 
   ],
   "products" : [
     {
-      "displayPrice" : "0.99",
+      "displayPrice" : "4.99",
       "familyShareable" : false,
-      "internalID" : "633FA0BB",
+      "internalID" : "6751863083",
       "localizations" : [
         {
-          "description" : "",
-          "displayName" : "",
+          "description" : "Tokens for generating greetings and cards",
+          "displayName" : "100 Tokens Pack",
           "locale" : "en_US"
         }
       ],
       "productID" : "com.aibirthday.tokens100",
-      "referenceName" : "100 токенов генерации",
+      "referenceName" : "100 Tokens Pack",
       "type" : "Consumable"
     },
     {
-      "displayPrice" : "3.99",
+      "displayPrice" : "49.99",
       "familyShareable" : false,
-      "internalID" : "61739608",
+      "internalID" : "6751863765",
       "localizations" : [
         {
-          "description" : "",
-          "displayName" : "",
-          "locale" : "en_US"
-        }
-      ],
-      "productID" : "com.aibirthday.tokens300",
-      "referenceName" : "300 токенов генерации",
-      "type" : "Consumable"
-    },
-    {
-      "displayPrice" : "19.99",
-      "familyShareable" : false,
-      "internalID" : "7EAFEFF3",
-      "localizations" : [
-        {
-          "description" : "",
-          "displayName" : "",
+          "description" : "Tokens for generating greetings and cards",
+          "displayName" : " 1200 Tokens Pack",
           "locale" : "en_US"
         }
       ],
       "productID" : "com.aibirthday.tokens1200",
-      "referenceName" : "1200 токенов генерации copy",
+      "referenceName" : "1200 Tokens Pack",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "14.99",
+      "familyShareable" : false,
+      "internalID" : "6751863845",
+      "localizations" : [
+        {
+          "description" : "Tokens for generating greetings and cards",
+          "displayName" : "300 Tokens Pack",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.aibirthday.tokens300",
+      "referenceName" : "300 Tokens Pack",
       "type" : "Consumable"
     }
   ],
   "settings" : {
+    "_applicationInternalID" : "6751730956",
+    "_developerTeamID" : "S2J3L39Z49",
     "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 779201499.05002701,
     "_locale" : "en_US",
     "_storefront" : "USA",
     "_storeKitErrors" : [
@@ -71,10 +74,7 @@
         "name" : "Load Products"
       },
       {
-        "current" : {
-          "index" : 1,
-          "type" : "purchase"
-        },
+        "current" : null,
         "enabled" : false,
         "name" : "Purchase"
       },
@@ -117,11 +117,11 @@
   },
   "subscriptionGroups" : [
     {
-      "id" : "6F6C776F",
+      "id" : "21771621",
       "localizations" : [
 
       ],
-      "name" : "Subscription Group",
+      "name" : "Premium Features",
       "subscriptions" : [
         {
           "adHocOffers" : [
@@ -132,20 +132,16 @@
           ],
           "displayPrice" : "9.99",
           "familyShareable" : false,
-          "groupNumber" : 1,
-          "internalID" : "5577B515",
+          "groupNumber" : 2,
+          "internalID" : "6751862903",
           "introductoryOffer" : null,
           "localizations" : [
-            {
-              "description" : "",
-              "displayName" : "",
-              "locale" : "en_US"
-            }
+
           ],
-          "productID" : "com.aibirthday.premium_month",
+          "productID" : "com.aibirthday.monthly",
           "recurringSubscriptionPeriod" : "P1M",
-          "referenceName" : "Подписка на месяц",
-          "subscriptionGroupID" : "6F6C776F",
+          "referenceName" : "Monthly Premium",
+          "subscriptionGroupID" : "21771621",
           "type" : "RecurringSubscription",
           "winbackOffers" : [
 
@@ -158,22 +154,18 @@
           "codeOffers" : [
 
           ],
-          "displayPrice" : "0.99",
+          "displayPrice" : "2.99",
           "familyShareable" : false,
           "groupNumber" : 1,
-          "internalID" : "9A22B349",
+          "internalID" : "6751862133",
           "introductoryOffer" : null,
           "localizations" : [
-            {
-              "description" : "",
-              "displayName" : "",
-              "locale" : "en_US"
-            }
+
           ],
-          "productID" : "com.aibirthday.premium_week",
+          "productID" : "com.aibirthday.weekly",
           "recurringSubscriptionPeriod" : "P1W",
-          "referenceName" : "Подписка на неделю",
-          "subscriptionGroupID" : "6F6C776F",
+          "referenceName" : "Weekly Premium",
+          "subscriptionGroupID" : "21771621",
           "type" : "RecurringSubscription",
           "winbackOffers" : [
 
@@ -186,22 +178,18 @@
           "codeOffers" : [
 
           ],
-          "displayPrice" : "59.99",
+          "displayPrice" : "99.99",
           "familyShareable" : false,
-          "groupNumber" : 1,
-          "internalID" : "0CC7C7AB",
+          "groupNumber" : 3,
+          "internalID" : "6751862851",
           "introductoryOffer" : null,
           "localizations" : [
-            {
-              "description" : "",
-              "displayName" : "",
-              "locale" : "en_US"
-            }
+
           ],
-          "productID" : "com.aibirthday.premium_year",
+          "productID" : "com.aibirthday.yearly",
           "recurringSubscriptionPeriod" : "P1Y",
-          "referenceName" : "Подписка на год",
-          "subscriptionGroupID" : "6F6C776F",
+          "referenceName" : "Yearly Premium",
+          "subscriptionGroupID" : "21771621",
           "type" : "RecurringSubscription",
           "winbackOffers" : [
 
