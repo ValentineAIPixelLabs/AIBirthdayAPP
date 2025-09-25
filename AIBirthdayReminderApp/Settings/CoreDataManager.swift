@@ -572,29 +572,29 @@ final class CoreDataManager {
     
     // MARK: - Data Loading Helpers
     
-    private func loadAllContacts(from context: NSManagedObjectContext) throws -> [ContactEntity] {
+    nonisolated private func loadAllContacts(from context: NSManagedObjectContext) throws -> [ContactEntity] {
         let fetchRequest: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
         return try context.fetch(fetchRequest)
     }
     
-    private func loadAllHolidays(from context: NSManagedObjectContext) throws -> [HolidayEntity] {
+    nonisolated private func loadAllHolidays(from context: NSManagedObjectContext) throws -> [HolidayEntity] {
         let fetchRequest: NSFetchRequest<HolidayEntity> = HolidayEntity.fetchRequest()
         return try context.fetch(fetchRequest)
     }
     
-    private func loadAllCardHistory(from context: NSManagedObjectContext) throws -> [CardHistoryEntity] {
+    nonisolated private func loadAllCardHistory(from context: NSManagedObjectContext) throws -> [CardHistoryEntity] {
         let fetchRequest: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
         return try context.fetch(fetchRequest)
     }
     
-    private func loadAllCongratsHistory(from context: NSManagedObjectContext) throws -> [CongratsHistoryEntity] {
+    nonisolated private func loadAllCongratsHistory(from context: NSManagedObjectContext) throws -> [CongratsHistoryEntity] {
         let fetchRequest: NSFetchRequest<CongratsHistoryEntity> = CongratsHistoryEntity.fetchRequest()
         return try context.fetch(fetchRequest)
     }
     
     // MARK: - Smart Migration with Merge Strategy
     
-    private func migrateContactsWithMerge(from sourceContacts: [ContactEntity], to target: NSManagedObjectContext) throws {
+    nonisolated private func migrateContactsWithMerge(from sourceContacts: [ContactEntity], to target: NSManagedObjectContext) throws {
         var migratedCount = 0
         var mergedCount = 0
         
@@ -630,7 +630,7 @@ final class CoreDataManager {
     /// Поиск кандидата‑дубликата контакта по «естественным» ключам
     /// 1) по совпадающему номеру телефона (если не пуст)
     /// 2) по (name+surname) и совпадающему дню/месяцу рождения
-    private func findDuplicateContactCandidate(of source: ContactEntity, in context: NSManagedObjectContext) throws -> ContactEntity? {
+    nonisolated private func findDuplicateContactCandidate(of source: ContactEntity, in context: NSManagedObjectContext) throws -> ContactEntity? {
         // 1) Телефон
         if let phone = source.phoneNumber, !phone.isEmpty {
             let req: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
@@ -655,7 +655,7 @@ final class CoreDataManager {
         return nil
     }
     
-    private func migrateHolidaysWithMerge(from sourceHolidays: [HolidayEntity], to target: NSManagedObjectContext) throws {
+    nonisolated private func migrateHolidaysWithMerge(from sourceHolidays: [HolidayEntity], to target: NSManagedObjectContext) throws {
         var migratedCount = 0
         var mergedCount = 0
         
@@ -679,7 +679,7 @@ final class CoreDataManager {
         // logging suppressed
     }
     
-    private func migrateCardHistoryWithMerge(from sourceCards: [CardHistoryEntity], to target: NSManagedObjectContext) throws {
+    nonisolated private func migrateCardHistoryWithMerge(from sourceCards: [CardHistoryEntity], to target: NSManagedObjectContext) throws {
         var migratedCount = 0
         var mergedCount = 0
         
@@ -750,7 +750,7 @@ final class CoreDataManager {
         // logging suppressed
     }
     
-    private func migrateCongratsHistoryWithMerge(from sourceCongrats: [CongratsHistoryEntity], to target: NSManagedObjectContext) throws {
+    nonisolated private func migrateCongratsHistoryWithMerge(from sourceCongrats: [CongratsHistoryEntity], to target: NSManagedObjectContext) throws {
         var migratedCount = 0
         var mergedCount = 0
         
@@ -786,7 +786,7 @@ final class CoreDataManager {
     
     // MARK: - Data Merging Helpers (CloudKit Priority)
     
-    private func mergeContactData(from source: ContactEntity, to target: ContactEntity) {
+    nonisolated private func mergeContactData(from source: ContactEntity, to target: ContactEntity) {
         // CloudKit имеет приоритет - обновляем только если целевые данные пустые
         // Это означает, что CloudKit данные не перезаписываются локальными
         if target.name?.isEmpty != false && source.name?.isEmpty == false {
@@ -852,7 +852,7 @@ final class CoreDataManager {
         }
     }
     
-    private func mergeHolidayData(from source: HolidayEntity, to target: HolidayEntity) {
+    nonisolated private func mergeHolidayData(from source: HolidayEntity, to target: HolidayEntity) {
         // CloudKit имеет приоритет - обновляем только если целевые данные пустые
         if target.title?.isEmpty != false && source.title?.isEmpty == false {
             target.title = source.title
@@ -881,7 +881,7 @@ final class CoreDataManager {
         }
     }
     
-    private func mergeCardHistoryData(from source: CardHistoryEntity, to target: CardHistoryEntity) {
+    nonisolated private func mergeCardHistoryData(from source: CardHistoryEntity, to target: CardHistoryEntity) {
         // CloudKit имеет приоритет - обновляем только если целевые данные пустые
         if target.cardID?.isEmpty != false && source.cardID?.isEmpty == false {
             target.cardID = source.cardID
@@ -899,7 +899,7 @@ final class CoreDataManager {
         }
     }
     
-    private func mergeCongratsHistoryData(from source: CongratsHistoryEntity, to target: CongratsHistoryEntity) {
+    nonisolated private func mergeCongratsHistoryData(from source: CongratsHistoryEntity, to target: CongratsHistoryEntity) {
         // CloudKit имеет приоритет - обновляем только если целевые данные пустые
         if target.message?.isEmpty != false && source.message?.isEmpty == false {
             target.message = source.message
@@ -914,7 +914,7 @@ final class CoreDataManager {
         }
     }
     
-    private func restoreRelationships(in context: NSManagedObjectContext) throws {
+    nonisolated private func restoreRelationships(in context: NSManagedObjectContext) throws {
         // Восстанавливаем связи между контактами и их историей
         let cardHistoryRequest: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
         let cardHistoryItems = try context.fetch(cardHistoryRequest)
@@ -940,7 +940,7 @@ final class CoreDataManager {
     
     // MARK: - Data Copying Helpers
     
-    private func copyContactData(from source: ContactEntity, to target: ContactEntity) {
+    nonisolated private func copyContactData(from source: ContactEntity, to target: ContactEntity) {
         target.id = source.id
         target.name = source.name
         target.surname = source.surname
@@ -963,7 +963,7 @@ final class CoreDataManager {
         target.notificationMinute = source.notificationMinute
     }
     
-    private func copyHolidayData(from source: HolidayEntity, to target: HolidayEntity) {
+    nonisolated private func copyHolidayData(from source: HolidayEntity, to target: HolidayEntity) {
         target.id = source.id
         target.title = source.title
         target.date = source.date
@@ -974,7 +974,7 @@ final class CoreDataManager {
         target.isCustom = source.isCustom
     }
     
-    private func copyCardHistoryData(from source: CardHistoryEntity, to target: CardHistoryEntity) {
+    nonisolated private func copyCardHistoryData(from source: CardHistoryEntity, to target: CardHistoryEntity) {
         target.id = source.id
         target.date = source.date
         target.cardID = source.cardID
@@ -983,7 +983,7 @@ final class CoreDataManager {
         // Note: relationship к contact будет восстановлен после миграции контактов
     }
     
-    private func copyCongratsHistoryData(from source: CongratsHistoryEntity, to target: CongratsHistoryEntity) {
+    nonisolated private func copyCongratsHistoryData(from source: CongratsHistoryEntity, to target: CongratsHistoryEntity) {
         target.id = source.id
         target.date = source.date
         target.message = source.message
@@ -1074,3 +1074,4 @@ final class CoreDataManager {
 extension Notification.Name {
     static let storageModeSwitched = Notification.Name("storageModeSwitched")
 }
+

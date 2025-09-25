@@ -287,7 +287,7 @@ struct ActivityViewController: UIViewControllerRepresentable {
         }
         
         .sheet(isPresented: $showStore) {
-            StoreView()
+            PaywallView()
         }
         .navigationTitle({
             let fmt = appBundle().localizedString(forKey: "contact.birthday.title", value: "День рождения: %@", table: "Localizable")

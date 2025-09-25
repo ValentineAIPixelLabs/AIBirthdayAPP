@@ -1,5 +1,6 @@
 import Foundation
 import StoreKit
+import UIKit
 
 @MainActor
 final class StoreKitManager: ObservableObject {
@@ -9,16 +10,35 @@ final class StoreKitManager: ObservableObject {
     }
     @Published var hasPremium: Bool = false
     @Published var activeSubscriptionProductId: String? = nil
-    
+    @Published private(set) var subscriptionAllowances: [String: Int] = [:]
+    @Published var pendingSubscriptionProductId: String? = nil
+    @Published var pendingSubscriptionEffectiveDate: Date? = nil
+    @Published var subscriptionExpiresAt: Date? = nil
+    @Published var nextSubscriptionResetAt: Date? = nil
+    @Published var autoRenewStatus: Bool? = nil
+    @Published var autoRenewProductId: String? = nil
+
     // Listener task for StoreKit transaction updates
     private var transactionUpdatesTask: Task<Void, Never>?
+    private var pendingPurchaseProductId: String?
 
     private static let tokensKey = "StoreKitManager.purchasedTokenCount"
+    private let defaultSubscriptionAllowances: [String: Int] = [
+        "week": 60,
+        "month": 300,
+        "year": 4000
+    ]
+    private lazy var isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 
     init() {
         if let saved = UserDefaults.standard.object(forKey: Self.tokensKey) as? Int {
             self.purchasedTokenCount = saved
         }
+        self.subscriptionAllowances = defaultSubscriptionAllowances
     }
     
     // Укажи тут свои productIDs (из .storekit-файла или App Store)
@@ -91,6 +111,16 @@ final class StoreKitManager: ObservableObject {
         return fmt.string(from: date)
     }
 
+    private func parseISODate(_ string: String?) -> Date? {
+        guard let string = string else { return nil }
+        if let date = isoFormatter.date(from: string) {
+            return date
+        }
+        let fallback = ISO8601DateFormatter()
+        fallback.formatOptions = [.withInternetDateTime]
+        return fallback.date(from: string)
+    }
+
     private struct TokensResponse: Decodable { let tokens_left: Int? }
     private struct ConfirmResponse: Decodable {
         let success: Bool?
@@ -108,29 +138,59 @@ final class StoreKitManager: ObservableObject {
         let expires_at: String?
         let next_reset_at: String?
         let tokens_left: Int?
+        let transaction_id: String?
+        let original_transaction_id: String?
+        let auto_renew_status: Bool?
+        let auto_renew_product_id: String?
+        let pending_product_id: String?
+        let pending_period: String?
+        let pending_allowance: Int?
+        let pending_effective_at: String?
+        let revocation_at: String?
     }
 
-    private func syncSubscriptionToServer(productId: String, period: String, expiresAt: Date, isActive: Bool) async {
+    private struct SubscriptionConfigResponse: Decodable {
+        let allowances: [String: Int]?
+    }
+
+    private func applySubscriptionStatus(_ status: SubscriptionStatus) {
+        if let left = status.tokens_left { self.setBalance(left) }
+        if let active = status.active { self.hasPremium = active }
+        if let productId = status.product_id { self.activeSubscriptionProductId = productId }
+        if let period = status.period, let allowance = status.allowance {
+            subscriptionAllowances[period] = allowance
+        }
+        subscriptionExpiresAt = parseISODate(status.expires_at)
+        nextSubscriptionResetAt = parseISODate(status.next_reset_at)
+        pendingSubscriptionProductId = status.pending_product_id
+        pendingSubscriptionEffectiveDate = parseISODate(status.pending_effective_at)
+        autoRenewStatus = status.auto_renew_status
+        autoRenewProductId = status.auto_renew_product_id
+    }
+
+    private func syncSubscriptionToServer(transaction: Transaction?, productId: String, period: String, expiresAt: Date, isActive: Bool) async {
         guard let token = currentJWT() else { return }
         var req = URLRequest(url: baseURL.appendingPathComponent("/api/subscriptions/sync"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "product_id": productId,
             "period": period,
             "expires_at": iso8601String(expiresAt),
             "is_active": isActive
         ]
+        if let txn = transaction {
+            body["transaction_id"] = String(txn.id)
+            body["original_transaction_id"] = String(txn.originalID)
+        }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
                 if let decoded = try? JSONDecoder().decode(SubscriptionStatus.self, from: data) {
-                    if let left = decoded.tokens_left { self.setBalance(left) }
-                    if let active = decoded.active { self.hasPremium = active }
-                    if let pid = decoded.product_id { self.activeSubscriptionProductId = pid }
+                    self.applySubscriptionStatus(decoded)
                 }
             }
         } catch { /* ignore network blips */ }
@@ -147,10 +207,17 @@ final class StoreKitManager: ObservableObject {
             let (data, response) = try await URLSession.shared.data(for: req)
             if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
                 if let decoded = try? JSONDecoder().decode(SubscriptionStatus.self, from: data) {
-                    if let left = decoded.tokens_left { self.setBalance(left) }
-                    if let active = decoded.active { self.hasPremium = active }
-                    if let pid = decoded.product_id { self.activeSubscriptionProductId = pid }
+                    self.applySubscriptionStatus(decoded)
                 }
+            } else if let http = response as? HTTPURLResponse, http.statusCode == 404 {
+                hasPremium = false
+                activeSubscriptionProductId = nil
+                pendingSubscriptionProductId = nil
+                pendingSubscriptionEffectiveDate = nil
+                subscriptionExpiresAt = nil
+                nextSubscriptionResetAt = nil
+                autoRenewStatus = nil
+                autoRenewProductId = nil
             }
         } catch { /* ignore */ }
     }
@@ -276,6 +343,7 @@ final class StoreKitManager: ObservableObject {
             await refreshSubscriptionStatus()
             await fetchServerTokens()
             await fetchSubscriptionStatus()
+            await fetchSubscriptionConfig()
         } catch {
             print("Ошибка загрузки продуктов: \(error)")
         }
@@ -284,6 +352,9 @@ final class StoreKitManager: ObservableObject {
     // Покупка продукта
     func purchase(product: Product) async {
         do {
+            if product.subscription != nil {
+                pendingPurchaseProductId = product.id
+            }
             let result = try await product.purchase()
             switch result {
             case .success(let verification):
@@ -303,6 +374,7 @@ final class StoreKitManager: ObservableObject {
             }
         } catch {
             print("Ошибка во время покупки: \(error)")
+            pendingPurchaseProductId = nil
         }
     }
     
@@ -316,15 +388,23 @@ final class StoreKitManager: ObservableObject {
             await confirmTokensPurchase(productId: productId, transaction: transaction, quantity: 1)
             print("[Store] Tokens updated, current balance: \(purchasedTokenCount)")
         } else if subscriptionIDs.contains(productId) {
+            let effectiveProductId: String = {
+                if let pending = pendingPurchaseProductId, pending != productId, subscriptionIDs.contains(pending) {
+                    print("⚠️ purchase mismatch, using pending product id \(pending) instead of \(productId)")
+                    return pending
+                }
+                return productId
+            }()
+
             hasPremium = true
-            activeSubscriptionProductId = productId
+            activeSubscriptionProductId = effectiveProductId
             print("Premium подписка активирована!")
-            let period = periodFor(productId: productId) ?? "month"
-            // Try to use StoreKit expiration if available; fall back to approx
-            let exp = transaction.expirationDate ?? approxExpiry(for: productId, from: transaction.purchaseDate)
-            await syncSubscriptionToServer(productId: productId, period: period, expiresAt: exp, isActive: true)
+            let period = periodFor(productId: effectiveProductId) ?? "month"
+            let exp = transaction.expirationDate ?? approxExpiry(for: effectiveProductId, from: transaction.purchaseDate)
+            await syncSubscriptionToServer(transaction: transaction, productId: effectiveProductId, period: period, expiresAt: exp, isActive: true)
             await fetchSubscriptionStatus()
         }
+        pendingPurchaseProductId = nil
     }
     
     // Восстановление покупок
@@ -340,13 +420,113 @@ final class StoreKitManager: ObservableObject {
         }
         await fetchSubscriptionStatus()
     }
-    
+
     // Удобный геттер для UI
     func productDisplayName(_ product: Product) -> String {
         product.displayName
     }
-    
+
     func productPrice(_ product: Product) -> String {
         product.displayPrice
+    }
+
+    private func currentActiveSubscriptionTransaction() async -> Transaction? {
+        for await result in Transaction.currentEntitlements {
+            switch result {
+            case .verified(let transaction):
+                if subscriptionIDs.contains(transaction.productID) {
+                    return transaction
+                }
+            case .unverified:
+                continue
+            }
+        }
+        return nil
+    }
+
+    func allowance(for productId: String) -> Int {
+        guard let period = periodFor(productId: productId) else { return 0 }
+        if let serverAllowance = subscriptionAllowances[period] {
+            return serverAllowance
+        }
+        return defaultSubscriptionAllowances[period] ?? 0
+    }
+
+    func isDowngradeComparedToActive(_ product: Product) -> Bool {
+        guard let activeId = activeSubscriptionProductId,
+              let activeProduct = products.first(where: { $0.id == activeId }) else {
+            return false
+        }
+        if product.price < activeProduct.price { return true }
+        let activeAllowance = allowance(for: activeProduct.id)
+        let candidateAllowance = allowance(for: product.id)
+        return candidateAllowance < activeAllowance
+    }
+
+    func presentManageSubscriptions() async {
+#if os(iOS)
+        if #available(iOS 15.0, *) {
+            do {
+                if let scene = await activeWindowScene() {
+                    try await AppStore.showManageSubscriptions(in: scene)
+                } else {
+                    print("[StoreKit] No active scene available for manage subscriptions UI")
+                }
+            } catch {
+                print("[StoreKit] manage subscriptions error: \(error)")
+            }
+        }
+#endif
+    }
+
+    func requestRefund() async {
+#if os(iOS)
+        guard let transaction = await currentActiveSubscriptionTransaction() else { return }
+        if #available(iOS 15.0, *) {
+            do {
+                if let scene = await activeWindowScene() {
+                    let status = try await transaction.beginRefundRequest(in: scene)
+                    switch status {
+                    case .success:
+                        print("[StoreKit] refund request submitted")
+                    case .userCancelled:
+                        print("[StoreKit] refund request canceled by user")
+                    @unknown default:
+                        print("[StoreKit] refund request returned unknown status")
+                    }
+                } else {
+                    print("[StoreKit] No active scene available for refund request")
+                }
+            } catch {
+                print("[StoreKit] refund request error: \(error)")
+            }
+        }
+#endif
+    }
+
+#if os(iOS)
+    private func activeWindowScene() async -> UIWindowScene? {
+        await MainActor.run {
+            UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .first { $0.activationState == .foregroundActive }
+        }
+    }
+#endif
+
+    private func fetchSubscriptionConfig() async {
+        guard let token = currentJWT() else { return }
+        var req = URLRequest(url: baseURL.appendingPathComponent("/api/subscriptions/config"))
+        req.httpMethod = "GET"
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+               let decoded = try? JSONDecoder().decode(SubscriptionConfigResponse.self, from: data),
+               let allowances = decoded.allowances {
+                subscriptionAllowances = defaultSubscriptionAllowances.merging(allowances) { _, new in new }
+            }
+        } catch { /* ignore */ }
     }
 }

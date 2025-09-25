@@ -1,5 +1,5 @@
 import SwiftUI
-import Contacts
+@preconcurrency import Contacts
 import ContactsUI
 
 @MainActor struct SettingsTabView: View {
@@ -18,6 +18,7 @@ import ContactsUI
     @State private var authCoverSignedIn = false
     @State private var showSignOutAlert = false
     @State private var suppressAuthAfterSignOut = false
+    @State private var showSupport = false
 
     var body: some View {
         NavigationStack {
@@ -32,6 +33,15 @@ import ContactsUI
                         }
                     } label: {
                         Label("Подписка", systemImage: "star.circle")
+                            .font(.headline)
+                            .padding(.vertical, 8)
+                    }
+                    .foregroundColor(.primary)
+
+                    Button {
+                        showSupport = true
+                    } label: {
+                        Label("Поддержка", systemImage: "questionmark.circle")
                             .font(.headline)
                             .padding(.vertical, 8)
                     }
@@ -177,6 +187,9 @@ import ContactsUI
             .fullScreenCover(isPresented: $showSubscription) {
                 PaywallView()
             }
+            .sheet(isPresented: $showSupport) {
+                SupportView()
+            }
             .fullScreenCover(isPresented: $showAuthScreen) {
                 SignInView(isSignedIn: Binding(
                     get: { authCoverSignedIn },
@@ -232,9 +245,10 @@ import ContactsUI
     }
 
     func importAllContacts() {
-        let store = CNContactStore()
-        store.requestAccess(for: .contacts) { granted, error in
+        CNContactStore().requestAccess(for: .contacts) { granted, error in
             guard granted, error == nil else { return }
+            // Create the store inside the completion to avoid capturing a non-Sendable value in a @Sendable closure
+            let store = CNContactStore()
             DispatchQueue.global(qos: .userInitiated).async {
                 let keys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactBirthdayKey, CNContactImageDataKey, CNContactNicknameKey, CNContactJobTitleKey] as [CNKeyDescriptor]
                 let request = CNContactFetchRequest(keysToFetch: keys)
@@ -345,5 +359,54 @@ struct SystemContactsPickerViewMultiple: UIViewControllerRepresentable {
                 self.parent.presentationMode.wrappedValue.dismiss()
             }
         }
+    }
+}
+
+
+
+struct SupportView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var store: StoreKitManager
+    @State private var isRequestingRefund = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section(header: Text("Поддержка")) {
+                    Text("Если нужна помощь или есть вопросы по подписке, напишите нам: hello@aibirthday.app")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                Section(footer: Text("Apple обработает запрос на возврат и уведомит о результате.")) {
+                    Button {
+                        Task { await requestRefund() }
+                    } label: {
+                        HStack {
+                            if isRequestingRefund {
+                                ProgressView()
+                                    .progressViewStyle(.circular)
+                            }
+                            Text("Запросить возврат")
+                        }
+                    }
+                    .disabled(isRequestingRefund)
+                }
+            }
+            .navigationTitle("Справка и поддержка")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Готово") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func requestRefund() async {
+        guard !isRequestingRefund else { return }
+        isRequestingRefund = true
+        defer { isRequestingRefund = false }
+        await store.requestRefund()
     }
 }

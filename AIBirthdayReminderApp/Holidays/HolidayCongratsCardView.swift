@@ -154,7 +154,7 @@ struct HolidayCongratsCardView: View {
             }
         }
         .sheet(isPresented: $showStore) {
-            StoreView()
+            PaywallView()
         }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 0) {

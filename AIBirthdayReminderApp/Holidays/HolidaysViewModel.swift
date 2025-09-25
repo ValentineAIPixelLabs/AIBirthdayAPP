@@ -150,7 +150,7 @@ class HolidaysViewModel: ObservableObject {
         }
     }
 
-    private func toModel(_ e: HolidayEntity) -> Holiday {
+    nonisolated private func toModel(_ e: HolidayEntity) -> Holiday {
         let mappedYear: Int? = {
             let y = Int(e.year)
             guard y >= 1900 else { return nil }
@@ -183,3 +183,4 @@ class HolidaysViewModel: ObservableObject {
         }
     }
 }
+

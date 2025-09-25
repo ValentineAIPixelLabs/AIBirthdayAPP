@@ -219,7 +219,7 @@ private func appBundle() -> Bundle {
             }
         }
         .sheet(isPresented: $showStore) {
-            StoreView()
+            PaywallView()
         }
         .confirmationDialog(
             appBundle().localizedString(forKey: "congrats.sheet.title",
