@@ -9,12 +9,6 @@ struct PaywallView: View {
     @State private var selectedProduct: Product? = nil
     @State private var isCTAEnabled: Bool = false
 
-    // MARK: - Config
-    private let spacingAfterHeader: CGFloat = 14
-    private let spacingAfterBenefits: CGFloat = 18
-    private let spacingBeforeCTA: CGFloat = 18
-    private let bottomLinksPadding: CGFloat = 16
-
     private func orderIndex(_ id: String) -> Int {
         if id.contains("weekly") { return 0 }
         if id.contains("monthly") { return 1 }
@@ -30,164 +24,32 @@ struct PaywallView: View {
 
     // MARK: - Body
     var body: some View {
-        ZStack {
-            DarkPurpleBackground().ignoresSafeArea()
+        NavigationStack {
+            ZStack {
+                DarkPurpleBackground().ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                // Top bar
-                HStack {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.9))
-                            .frame(width: 32, height: 32)
-                            .background(.white.opacity(0.12), in: Circle())
-                            .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
-                            .accessibilityLabel("Закрыть")
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 20) {
+                        headerSection
+                        benefitSection
+                        planSection
+                        bottomActionSection
                     }
-                    .buttonStyle(.plain)
-                    .padding(.leading, 8)
-                    Spacer()
-                }
-                .padding(.top, 2)
-
-                // Header
-                VStack(spacing: 8) {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(LinearGradient(colors: [Color(hex: 0x8A5DFF), Color(hex: 0xC06BFF)],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 60, height: 60)
-                        .overlay(
-                            Image(systemName: "star")
-                                .font(.system(size: 28, weight: .bold))
-                                .foregroundStyle(.white)
-                        )
-                        .shadow(color: .black.opacity(0.2), radius: 10, y: 6)
-                        .accessibilityHidden(true)
-
-                    Text("Премиум-доступ")
-                        .font(.system(size: 30, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.center)
-
-                    Text("Создавайте идеальные поздравления с помощью ИИ")
-                        .font(.system(.title3, design: .default).weight(.regular))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                }
-                .padding(.top, 2)
-
-                // Между подзаголовком и преимуществами
-                Spacer(minLength: spacingAfterHeader).fixedSize()
-
-                // Content
-                VStack(spacing: 0) {
-                    // Benefits (без фона)
-                    VStack(alignment: .leading, spacing: 10) {
-                        BenefitRow(icon: "person.text.rectangle", title: "Генерация по данным о контактах")
-                        BenefitRow(icon: "paintbrush.pointed.fill", title: "Уникальные дизайны открыток")
-                        BenefitRow(icon: "sparkles", title: "Лучшее качество изображений")
-                    }
-                    .padding(.horizontal, 16)
-
-                    // Между преимуществами и блоком цен
-                    Spacer(minLength: spacingAfterBenefits).fixedSize()
-
-                    // Plans list (3 cards)
-                    VStack(spacing: 10) {
-                        if subscriptionProducts.isEmpty {
-                            VStack(spacing: 6) {
-                                ProgressView().tint(.white)
-                                Text("Загружаем цены…")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.7))
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                        } else {
-                            ForEach(subscriptionProducts, id: \.id) { product in
-                                let isActive = store.activeSubscriptionProductId == product.id
-                                let isDisabled = isActive
-
-                                PlanRow(
-                                    product: product,
-                                    isSelected: selectedProduct?.id == product.id,
-                                    isActive: isActive,
-                                    isDisabled: isDisabled,
-                                    allowance: store.allowance(for: product.id),
-                                    onTap: {
-                                        guard !isDisabled else { return }
-                                        selectedProduct = product
-                                        updateCTAEnabled()
-                                    }
-                                )
-                                .padding(.horizontal, 16)
-                            }
-                        }
-                    }
-                }
-                .padding(.vertical, 0)
-
-                if let message = combinedStatusMessage {
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(.white.opacity(0.85))
-                        .multilineTextAlignment(.leading)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                // Между ценами и кнопкой
-                Spacer(minLength: spacingBeforeCTA).fixedSize()
-
-                // Bottom CTA
-                VStack(spacing: 10) {
-                    Button {
-                        guard let p = selectedProduct, isCTAEnabled else { return }
-                        Task {
-                            if store.isDowngradeComparedToActive(p) {
-                                await store.presentManageSubscriptions()
-                            } else {
-                                await store.purchase(product: p)
-                            }
-                        }
-                    } label: {
-                        Text(ctaTitle())
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(Color.white.opacity(isCTAEnabled ? 1.0 : 0.8))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color(hex: 0xB06BFF).opacity(isCTAEnabled ? 1.0 : 0.45))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(Color.white.opacity(isCTAEnabled ? 0.25 : 0.12), lineWidth: 1)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!isCTAEnabled)
-                    .padding(.horizontal, 16)
-
-                    Text("Токены обнуляются в конце оплаченного периода. Автопродление. Отменить можно в настройках Apple ID.")
-                        .font(.footnote)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-
-                    HStack(spacing: 18) {
-                        Button("Условия") { if let u = URL(string: "https://aibirthday.app/terms") { openURL(u) } }
-                        Button("Конфиденциальность") { if let u = URL(string: "https://aibirthday.app/privacy") { openURL(u) } }
-                        Button("Восстановить") { Task { await store.restorePurchases() } }
-                    }
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.8))
-                    .padding(.bottom, bottomLinksPadding)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 18)
+                    .frame(maxWidth: .infinity)
                 }
             }
+            .toolbarBackground(.clear, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Закрыть", role: .cancel) { dismiss() }
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
         }
         .task {
             store.startTransactionListener()
@@ -205,6 +67,149 @@ struct PaywallView: View {
             updateDefaultSelection()
             updateCTAEnabled()
         }
+    }
+
+    // MARK: - Sections
+    @ViewBuilder
+    private var headerSection: some View {
+        VStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(
+                    LinearGradient(colors: [Color(hex: 0x8A5DFF), Color(hex: 0xC06BFF)],
+                                  startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+                .frame(width: 56, height: 56)
+                .overlay(
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundStyle(.white)
+                )
+                .shadow(color: .black.opacity(0.25), radius: 16, y: 12)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 6) {
+                Text("Премиум-доступ")
+                    .font(.system(size: 28, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+
+                Text("Создавайте идеальные поздравления с помощью ИИ")
+                    .font(.headline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 16)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var benefitSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            BenefitRow(icon: "person.text.rectangle", title: "Генерация по данным о контактах")
+            BenefitRow(icon: "paintbrush", title: "Уникальные дизайны открыток")
+            BenefitRow(icon: "sparkles", title: "Лучшее качество изображений")
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var planSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if subscriptionProducts.isEmpty {
+                HStack(spacing: 12) {
+                    ProgressView().tint(.white)
+                    Text("Загружаем предложения…")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.75))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+                .background(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.white.opacity(0.06))
+                )
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(subscriptionProducts, id: \.id) { product in
+                        let isActive = store.activeSubscriptionProductId == product.id
+                        let isDisabled = isActive
+
+                        PlanRow(
+                            product: product,
+                            isSelected: selectedProduct?.id == product.id,
+                            isActive: isActive,
+                            isDisabled: isDisabled,
+                            allowance: store.allowance(for: product.id),
+                            onTap: {
+                                guard !isDisabled else { return }
+                                selectedProduct = product
+                                updateCTAEnabled()
+                            }
+                        )
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var bottomActionSection: some View {
+        VStack(spacing: 10) {
+            Button {
+                guard let product = selectedProduct, isCTAEnabled else { return }
+                Task {
+                    if store.isDowngradeComparedToActive(product) {
+                        await store.presentManageSubscriptions()
+                    } else {
+                        await store.purchase(product: product)
+                    }
+                }
+            } label: {
+                Text(ctaTitle())
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.white.opacity(isCTAEnabled ? 1.0 : 0.8))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(Color(hex: 0xB06BFF).opacity(isCTAEnabled ? 1.0 : 0.45))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color.white.opacity(isCTAEnabled ? 0.25 : 0.12), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(!isCTAEnabled)
+
+            HStack(spacing: 24) {
+                Button("Условия") {
+                    if let url = URL(string: "https://aibirthday.app/terms") {
+                        openURL(url)
+                    }
+                }
+
+                Button("Конфиденциальность") {
+                    if let url = URL(string: "https://aibirthday.app/privacy") {
+                        openURL(url)
+                    }
+                }
+
+                Button("Восстановить") {
+                    Task { await store.restorePurchases() }
+                }
+            }
+            .font(.footnote)
+            .foregroundStyle(.white.opacity(0.85))
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Helpers (selection)
@@ -268,57 +273,6 @@ struct PaywallView: View {
         return "Перейти за \(p.displayPrice) \(periodAccusative(for: p))"
     }
 
-    private static let statusDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter
-    }()
-
-    private var pendingStatusMessage: String? {
-        guard let pendingId = store.pendingSubscriptionProductId,
-              let effectiveDate = store.pendingSubscriptionEffectiveDate else {
-            return nil
-        }
-        let dateString = Self.statusDateFormatter.string(from: effectiveDate)
-        let planName = subscriptionProducts.first(where: { $0.id == pendingId })?.displayName
-        if let planName {
-            return "Смена на \(planName) вступит в силу \(dateString)."
-        } else {
-            return "Смена вступит в силу \(dateString)."
-        }
-    }
-
-    private var generalStatusMessage: String? {
-        if let _ = store.activeSubscriptionProductId, store.hasPremium == false {
-            return "Оплата не прошла, доступ сохранён. Новые токены появятся после успешного продления."
-        }
-        var parts: [String] = []
-        if let expires = store.subscriptionExpiresAt {
-            parts.append("Подписка оплачена до \(Self.statusDateFormatter.string(from: expires)).")
-        }
-        if let nextReset = store.nextSubscriptionResetAt {
-            parts.append("Следующее обновление токенов \(Self.statusDateFormatter.string(from: nextReset)).")
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " ")
-    }
-
-    private var upgradeStatusMessage: String? {
-        guard let selected = selectedProduct,
-              let active = activeProduct(),
-              selected.id != active.id,
-              store.isDowngradeComparedToActive(selected) == false else {
-            return nil
-        }
-        return "Новый план активируется сразу, списание сегодня, токены обновятся сразу."
-    }
-
-    private var combinedStatusMessage: String? {
-        if let pending = pendingStatusMessage { return pending }
-        if let upgrade = upgradeStatusMessage { return upgrade }
-        return generalStatusMessage
-    }
-
     // MARK: - Period phrase for CTA (accusative)
     private func periodAccusative(for product: Product) -> String {
         guard let sub = product.subscription else {
@@ -348,15 +302,15 @@ private struct BenefitRow: View {
                 Circle()
                     .fill(LinearGradient(colors: [Color.green.opacity(0.22), Color.mint.opacity(0.18)],
                                          startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 28, height: 28)
+                    .frame(width: 26, height: 26)
                     .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
             }
             Text(title)
-                .font(.callout)
-                .foregroundStyle(.white.opacity(0.95))
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.92))
             Spacer()
         }
         .accessibilityElement(children: .combine)
@@ -376,9 +330,9 @@ private struct PlanRow: View {
         Button(action: onTap) {
             HStack(spacing: 12) {
                 // Left: title + period + allowance
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(product.displayName)
-                        .font(.title3.weight(.semibold))
+                        .font(.headline.weight(.semibold))
                         .foregroundStyle(isDisabled ? .white.opacity(0.6) : .white)
                         .lineLimit(1)
 
@@ -388,7 +342,7 @@ private struct PlanRow: View {
                         .foregroundStyle(isDisabled ? .white.opacity(0.6) : .white)
 
                     Text("\(allowance) токенов")
-                        .font(.callout)
+                        .font(.subheadline)
                         .foregroundStyle(isDisabled ? .white.opacity(0.5) : .white.opacity(0.9))
                 }
                 Spacer()
@@ -396,7 +350,7 @@ private struct PlanRow: View {
                 // Right: price + checkbox в одну строку
                 HStack(spacing: 10) {
                     Text(product.displayPrice)
-                        .font(.title3.weight(.bold))
+                        .font(.headline.weight(.bold))
                         .foregroundStyle(isDisabled ? .white.opacity(0.65) : .white)
                         .monospacedDigit()
 
@@ -417,7 +371,8 @@ private struct PlanRow: View {
                 }
             }
             .contentShape(Rectangle())
-            .padding(16)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 16)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(
@@ -471,20 +426,20 @@ private struct DarkPurpleBackground: View {
         ZStack {
             LinearGradient(
                 colors: scheme == .dark
-                    ? [Color(hex: 0x1F0736), Color(hex: 0x2B0C4D)]
-                    : [Color(hex: 0x341057), Color(hex: 0x4A1B7D)],
+                    ? [Color(hex: 0x3A216A), Color(hex: 0x09011F)]
+                    : [Color(hex: 0x4B2C8F), Color(hex: 0x14002B)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            RadialGradient(colors: [Color.white.opacity(0.10), .clear],
-                           center: .top, startRadius: 0, endRadius: 460)
-                .blendMode(.softLight)
-                .allowsHitTesting(false)
             RadialGradient(colors: [Color.white.opacity(0.08), .clear],
-                           center: .bottom, startRadius: 0, endRadius: 520)
+                           center: .top, startRadius: 0, endRadius: 420)
                 .blendMode(.softLight)
                 .allowsHitTesting(false)
-            LinearGradient(colors: [Color.black.opacity(0.08), Color.black.opacity(0.14)],
+            RadialGradient(colors: [Color.black.opacity(0.35), .clear],
+                           center: .bottom, startRadius: 0, endRadius: 520)
+                .blendMode(.multiply)
+                .allowsHitTesting(false)
+            LinearGradient(colors: [Color.black.opacity(0.14), Color.black.opacity(0.26)],
                            startPoint: .top, endPoint: .bottom)
                 .allowsHitTesting(false)
         }

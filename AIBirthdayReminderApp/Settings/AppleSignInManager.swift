@@ -118,6 +118,8 @@ extension AppleSignInManager: ASAuthorizationControllerDelegate {
                 if let token = json["token"] as? String {
                     try? KeychainStore.set(token, for: self.jwtTokenKey)
                     print("✅ Saved app JWT (Keychain)")
+                    print("🔐 JWT: \(token)")
+                    UIPasteboard.general.string = token
                 }
 
                 print("✅ Sign in with Apple completed")

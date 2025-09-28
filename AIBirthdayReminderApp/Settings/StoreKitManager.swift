@@ -344,6 +344,7 @@ final class StoreKitManager: ObservableObject {
             await fetchServerTokens()
             await fetchSubscriptionStatus()
             await fetchSubscriptionConfig()
+            debugPrintActiveTransactions()
         } catch {
             print("Ошибка загрузки продуктов: \(error)")
         }
@@ -528,5 +529,20 @@ final class StoreKitManager: ObservableObject {
                 subscriptionAllowances = defaultSubscriptionAllowances.merging(allowances) { _, new in new }
             }
         } catch { /* ignore */ }
+    }
+
+    // MARK: - Debug helpers
+    func debugPrintActiveTransactions() {
+        Task {
+            for await result in Transaction.currentEntitlements {
+                switch result {
+                case .verified(let transaction):
+                    guard subscriptionIDs.contains(transaction.productID) else { continue }
+                    print("[StoreKit] tx id=\(transaction.id) original=\(transaction.originalID) product=\(transaction.productID)")
+                case .unverified:
+                    continue
+                }
+            }
+        }
     }
 }
