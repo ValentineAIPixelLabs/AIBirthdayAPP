@@ -21,6 +21,9 @@ final class StoreKitManager: ObservableObject {
     // Listener task for StoreKit transaction updates
     private var transactionUpdatesTask: Task<Void, Never>?
     private var pendingPurchaseProductId: String?
+    private var handledTransactionIds: Set<String> = []
+    private var handledTransactionsOrder: [String] = []
+    private let handledTransactionsLimit = 128
 
     private static let tokensKey = "StoreKitManager.purchasedTokenCount"
     private let defaultSubscriptionAllowances: [String: Int] = [
@@ -39,6 +42,8 @@ final class StoreKitManager: ObservableObject {
             self.purchasedTokenCount = saved
         }
         self.subscriptionAllowances = defaultSubscriptionAllowances
+
+        startTransactionListener()
     }
     
     // Укажи тут свои productIDs (из .storekit-файла или App Store)
@@ -84,6 +89,30 @@ final class StoreKitManager: ObservableObject {
             self.purchasedTokenCount += delta
         } else {
             DispatchQueue.main.async { self.purchasedTokenCount += delta }
+        }
+    }
+
+    private func hasProcessedTransaction(_ id: String) -> Bool {
+        handledTransactionIds.contains(id)
+    }
+
+    private func rememberHandledTransaction(_ id: String) {
+        // keep ordering to cull old entries without unbounded growth
+        if let existingIndex = handledTransactionsOrder.firstIndex(of: id) {
+            handledTransactionsOrder.remove(at: existingIndex)
+        }
+        handledTransactionIds.insert(id)
+        handledTransactionsOrder.append(id)
+        if handledTransactionsOrder.count > handledTransactionsLimit, let oldest = handledTransactionsOrder.first {
+            handledTransactionsOrder.removeFirst()
+            handledTransactionIds.remove(oldest)
+        }
+    }
+
+    private func forgetHandledTransaction(_ id: String) {
+        handledTransactionIds.remove(id)
+        if let index = handledTransactionsOrder.firstIndex(of: id) {
+            handledTransactionsOrder.remove(at: index)
         }
     }
 
@@ -155,8 +184,15 @@ final class StoreKitManager: ObservableObject {
 
     private func applySubscriptionStatus(_ status: SubscriptionStatus) {
         if let left = status.tokens_left { self.setBalance(left) }
-        if let active = status.active { self.hasPremium = active }
-        if let productId = status.product_id { self.activeSubscriptionProductId = productId }
+        if let active = status.active {
+            self.hasPremium = active
+            if !active {
+                self.activeSubscriptionProductId = nil
+            }
+        }
+        if let productId = status.product_id, (status.active ?? true) {
+            self.activeSubscriptionProductId = productId
+        }
         if let period = status.period, let allowance = status.allowance {
             subscriptionAllowances[period] = allowance
         }
@@ -286,23 +322,34 @@ final class StoreKitManager: ObservableObject {
     }
     
     /// Start listening for StoreKit transaction updates to avoid missing purchases
-    func startTransactionListener() {
-        // prevent multiple listeners
-        guard transactionUpdatesTask == nil else { return }
+    @discardableResult
+    func startTransactionListener() -> Bool {
+        if let existingTask = transactionUpdatesTask {
+            if existingTask.isCancelled {
+                transactionUpdatesTask = nil
+            } else {
+                return false
+            }
+        }
 
         transactionUpdatesTask = Task(priority: .background) { [weak self] in
             guard let self else { return }
             for await update in Transaction.updates {
                 do {
                     let transaction = try Self.verify(update)
-                    // Handle (credit tokens / set premium) and finish
-                    await self.handlePurchase(transaction: transaction)
                     await transaction.finish()
+                    await self.handlePurchase(transaction: transaction)
                 } catch {
                     // Failed verification; ignore but keep listening
                 }
             }
+
+            await MainActor.run { [weak self] in
+                self?.transactionUpdatesTask = nil
+            }
         }
+
+        return true
     }
 
     /// Refresh current subscription status based on current entitlements
@@ -380,10 +427,22 @@ final class StoreKitManager: ObservableObject {
     }
     
     // Обработка успешной покупки (MVP)
-    private func handlePurchase(transaction: Transaction) async {
+    private func handlePurchase(transaction: Transaction, force: Bool = false) async {
         let productId = transaction.productID
         let transactionId = String(transaction.id)
+        if force {
+            forgetHandledTransaction(transactionId)
+        } else if hasProcessedTransaction(transactionId) {
+            print("[StoreKit] skipping duplicate transaction:", transactionId)
+            return
+        }
+
         print("➡️ purchase tx:", transactionId)
+        defer {
+            rememberHandledTransaction(transactionId)
+            pendingPurchaseProductId = nil
+        }
+
         if consumableIDs.contains(productId) {
             // Подтверждаем покупку токенов на сервере (идемпотентно)
             await confirmTokensPurchase(productId: productId, transaction: transaction, quantity: 1)
@@ -405,7 +464,6 @@ final class StoreKitManager: ObservableObject {
             await syncSubscriptionToServer(transaction: transaction, productId: effectiveProductId, period: period, expiresAt: exp, isActive: true)
             await fetchSubscriptionStatus()
         }
-        pendingPurchaseProductId = nil
     }
     
     // Восстановление покупок
@@ -413,13 +471,26 @@ final class StoreKitManager: ObservableObject {
         for await result in Transaction.currentEntitlements {
             switch result {
             case .verified(let transaction):
-                await handlePurchase(transaction: transaction)
+                await handlePurchase(transaction: transaction, force: true)
             case .unverified(_, _):
                 // Обычно игнорируется для восстановления
                 break
             }
         }
         await fetchSubscriptionStatus()
+    }
+
+    /// Re-sync currently active App Store entitlements with the backend (e.g. on app launch)
+    func synchronizeActiveSubscriptionsWithServer(force: Bool = false) async {
+        for await result in Transaction.currentEntitlements {
+            switch result {
+            case .verified(let transaction):
+                guard subscriptionIDs.contains(transaction.productID) else { continue }
+                await handlePurchase(transaction: transaction, force: force)
+            case .unverified:
+                continue
+            }
+        }
     }
 
     // Удобный геттер для UI

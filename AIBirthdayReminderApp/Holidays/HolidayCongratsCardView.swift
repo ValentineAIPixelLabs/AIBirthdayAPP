@@ -41,6 +41,7 @@ struct HolidayCongratsCardView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(spacing: 20) {
+                        holidayHeader
 
                         // История открыток — вертикальная сетка 2 колонки
                         HolidayCardHistorySection(
@@ -83,26 +84,8 @@ struct HolidayCongratsCardView: View {
                 }
             }
         )
-        .navigationTitle(holiday.title)
+        .navigationTitle(navigationTitleText)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showStore = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                        Text("\(store.purchasedTokenCount)")
-                            .font(.system(size: 17, weight: .bold, design: .rounded))
-                    }
-                    .foregroundStyle(.tint)
-                }
-                .tint(Color(UIColor.systemBlue))
-                .buttonStyle(.plain)
-                .accessibilityLabel(appBundle().localizedString(forKey: "store.tokens.balance", value: "Баланс токенов", table: "Localizable"))
-            }
-        }
         .fullScreenCover(
             isPresented: Binding(
                 get: { showCardPopup },
@@ -217,6 +200,38 @@ struct HolidayCongratsCardView: View {
                 handleGenerate(for: contact)
             }
         }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showStore = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("\(store.purchasedTokenCount)")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(.tint)
+                }
+                .tint(Color(UIColor.systemBlue))
+                .buttonStyle(.plain)
+                .accessibilityLabel(appBundle().localizedString(forKey: "store.tokens.balance", value: "Баланс токенов", table: "Localizable"))
+            }
+        }
+    }
+
+    private var navigationTitleText: String {
+        appBundle().localizedString(forKey: "card.title", value: "Открытка", table: "Localizable")
+    }
+
+    private var holidayHeader: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(holiday.title)
+                .font(.title3.weight(.semibold))
+                .foregroundColor(.primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
     }
 
     // MARK: - Генерация открытки (обновлено)

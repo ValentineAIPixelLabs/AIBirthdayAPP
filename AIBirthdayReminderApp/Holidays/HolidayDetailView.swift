@@ -39,9 +39,13 @@ private func formattedHolidayDate(_ holiday: Holiday) -> String {
 @MainActor struct HolidayDetailView: View {
     let holiday: Holiday
     @ObservedObject var vm: HolidaysViewModel
+    @EnvironmentObject var contactsVM: ContactsViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showEditHolidayView = false
     @State private var navigateToEdit = false
+    @State private var showCongratsSheet = false
+    @State private var isCongratsActive = false
+    @State private var selectedCongratsMode: String? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -109,7 +113,10 @@ private func formattedHolidayDate(_ holiday: Holiday) -> String {
                             .cardBackground()
                         }
                         
-                        Spacer()
+                        CongratulateButton {
+                            showCongratsSheet = true
+                        }
+                        .padding(.top, 6)
                     }
                     .frame(maxWidth: EditorTheme.detailMaxWidth)
                     .padding(.horizontal, EditorTheme.detailHorizontalPadding)
@@ -137,6 +144,31 @@ private func formattedHolidayDate(_ holiday: Holiday) -> String {
                     Image(systemName: "pencil")
                 }
             }
+        }
+        .navigationDestination(isPresented: $isCongratsActive) {
+            if let mode = selectedCongratsMode {
+                if mode == "text" {
+                    HolidayCongratsTextView(holiday: holiday, vm: contactsVM)
+                } else {
+                    HolidayCongratsCardView(holiday: holiday, vm: contactsVM)
+                }
+            } else {
+                EmptyView()
+            }
+        }
+        .sheet(isPresented: $showCongratsSheet) {
+            CongratulationActionSheet(
+                onGenerateText: {
+                    selectedCongratsMode = "text"
+                    showCongratsSheet = false
+                    isCongratsActive = true
+                },
+                onGenerateCard: {
+                    selectedCongratsMode = "card"
+                    showCongratsSheet = false
+                    isCongratsActive = true
+                }
+            )
         }
     }
 }

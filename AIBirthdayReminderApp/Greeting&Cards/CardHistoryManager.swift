@@ -180,21 +180,7 @@ final class CardHistoryManager {
         }
     }
 
-    static func logTotalCardImagesSize(for contactId: UUID) {
-        let ctx = viewContext
-        let request: NSFetchRequest<CardHistoryEntity> = CardHistoryEntity.fetchRequest()
-        request.predicate = NSPredicate(format: "contact.id == %@", contactId as CVarArg)
-
-        do {
-            let results = try ctx.fetch(request)
-            let totalBytes = results.compactMap { $0.imageData?.count }.reduce(0, +)
-            let totalMB = Double(totalBytes) / 1024 / 1024
-            print("🧮 Общий размер всех открыток для контакта \(contactId): \(totalBytes) байт (\(String(format: "%.2f", totalMB)) MB)")
-        } catch {
-            print("❌ Не удалось загрузить открытки для подсчёта веса: \(error)")
-        }
-    }
-
+    
 
     /// Удалить открытку по id
     static func deleteCard(_ id: UUID) {

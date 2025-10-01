@@ -171,11 +171,17 @@ struct EditContactView: View {
                     TextField(String(localized: "add.nickname.optional", defaultValue: "Прозвище (необязательно)", bundle: appBundle(), locale: appLocale()), text: $nickname)
                         .focused($focusedField, equals: .nickname)
                     Picker(String(localized: "add.relation", defaultValue: "Отношения", bundle: appBundle(), locale: appLocale()), selection: $relation) {
-                        ForEach(relations, id: \.self) { Text(localizedRelationTitle($0)) }
+                        ForEach(relations, id: \.self) { relation in
+                            Text(localizedRelationTitle(relation)).tag(relation)
+                        }
                     }
+                    .pickerStyle(.menu)
                     Picker(String(localized: "add.gender", defaultValue: "Пол", bundle: appBundle(), locale: appLocale()), selection: $gender) {
-                        ForEach(genders, id: \.self) { Text(localizedGenderTitle($0)) }
+                        ForEach(genders, id: \.self) { gender in
+                            Text(localizedGenderTitle(gender)).tag(gender)
+                        }
                     }
+                    .pickerStyle(.menu)
                     TextField(String(localized: "add.phone", defaultValue: "Телефон", bundle: appBundle(), locale: appLocale()), text: $phoneNumber)
                         .keyboardType(.phonePad)
                         .focused($focusedField, equals: .phone)

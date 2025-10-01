@@ -101,6 +101,7 @@ struct AIBirthdayReminderAppApp: App {
                 .task {
                     store.startTransactionListener()
                     await store.loadProducts()
+                    await store.synchronizeActiveSubscriptionsWithServer()
                 }
         }
     }

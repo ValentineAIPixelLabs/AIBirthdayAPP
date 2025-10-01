@@ -71,17 +71,7 @@ struct ActivityViewController: UIViewControllerRepresentable {
     var body: some View {
         ZStack {
             AppBackground()
-            VStack(spacing: 0) {
-                // Scrollable Content
-                ScrollView {
-                    VStack(spacing: 0) {
-                        mainContent()
-                    }
-                    .padding(.top, 8)
-                    .padding(.bottom, 16)
-                }
-                .scrollDismissesKeyboard(.immediately)
-            }
+            scrollContainer()
         }
         .onTapGesture {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -89,7 +79,6 @@ struct ActivityViewController: UIViewControllerRepresentable {
         .onAppear {
             cardHistory = CardHistoryManager.getCards(for: contact.id)
             congratsHistory = CongratsHistoryManager.getCongrats(for: contact.id)
-            CardHistoryManager.logTotalCardImagesSize(for: contact.id)
             Task {
                 store.startTransactionListener()
                 await store.fetchServerTokens()
@@ -100,34 +89,7 @@ struct ActivityViewController: UIViewControllerRepresentable {
             progressTimer?.invalidate()
             progressTimer = nil
         }
-        .overlay(
-            Group {
-                if isLoading {
-                    ZStack {
-                        Color.black.opacity(0.28).ignoresSafeArea()
-                        if loadingType == .image {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle())
-                                .controlSize(.large)
-                                .tint(.white)
-                                .scaleEffect(1.5)
-                        } else if loadingType == .prompt {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle())
-                                .controlSize(.large)
-                                .tint(.white)
-                                .scaleEffect(1.5)
-                        } else if loadingType == .text {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle())
-                                .controlSize(.large)
-                                .tint(.white)
-                                .scaleEffect(1.5)
-                        }
-                    }
-                }
-            }
-        )
+        .overlay(loadingOverlay)
         .alert(isPresented: Binding<Bool>(
             get: { alertMessage != nil },
             set: { _ in alertMessage = nil }
@@ -137,24 +99,6 @@ struct ActivityViewController: UIViewControllerRepresentable {
                 message: Text(alertMessage ?? ""),
                 dismissButton: .default(Text(String(localized: "common.ok", defaultValue: "OK", bundle: appBundle(), locale: appLocale())))
             )
-        }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showStore = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                        Text("\(store.purchasedTokenCount)")
-                            .font(.system(size: 17, weight: .bold, design: .rounded))
-                    }
-                    .foregroundStyle(.tint)
-                }
-                .tint(Color(UIColor.systemBlue))
-                .buttonStyle(.plain)
-                .accessibilityLabel(String(localized: "store.tokens.balance", defaultValue: "Баланс токенов", bundle: appBundle(), locale: appLocale()))
-            }
         }
         .fullScreenCover(
             isPresented: Binding(
@@ -289,10 +233,7 @@ struct ActivityViewController: UIViewControllerRepresentable {
         .sheet(isPresented: $showStore) {
             PaywallView()
         }
-        .navigationTitle({
-            let fmt = appBundle().localizedString(forKey: "contact.birthday.title", value: "День рождения: %@", table: "Localizable")
-            return String(format: fmt, contact.name)
-        }())
+        .navigationTitle(navigationTitleText)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
             if selectedMode == "text" {
@@ -363,12 +304,74 @@ struct ActivityViewController: UIViewControllerRepresentable {
             }
         }
         .toolbar(.visible, for: .tabBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showStore = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("\(store.purchasedTokenCount)")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(.tint)
+                }
+                .tint(Color(UIColor.systemBlue))
+                .buttonStyle(.plain)
+                .accessibilityLabel(String(localized: "store.tokens.balance", defaultValue: "Баланс токенов", bundle: appBundle(), locale: appLocale()))
+            }
+        }
     }
 
     // MARK: - Main Content Extraction
     @ViewBuilder
+    private func scrollContainer() -> some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 0) {
+                    mainContent()
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+            }
+            .scrollDismissesKeyboard(.immediately)
+        }
+    }
+
+    @ViewBuilder
+    private var loadingOverlay: some View {
+        if isLoading {
+            ZStack {
+                Color.black.opacity(0.28).ignoresSafeArea()
+                if loadingType == .image {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                        .controlSize(.large)
+                        .tint(.white)
+                        .scaleEffect(1.5)
+                } else if loadingType == .prompt {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                        .controlSize(.large)
+                        .tint(.white)
+                        .scaleEffect(1.5)
+                } else if loadingType == .text {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                        .controlSize(.large)
+                        .tint(.white)
+                        .scaleEffect(1.5)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private func mainContent() -> some View {
         VStack(spacing: 20) {
+            headerSection()
+
             // --- Новый UI только для режима "card" ---
             if selectedMode == "card" {
                 CardGenerationSection(
@@ -428,8 +431,39 @@ struct ActivityViewController: UIViewControllerRepresentable {
         .padding(.bottom, 32)
     }
 
+    @ViewBuilder
+    private func headerSection() -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(contact.name)
+                .font(.title3.weight(.semibold))
+                .foregroundColor(.primary)
+            if let relation = contact.relationType, !relation.isEmpty {
+                Text(relation)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal)
+    }
 
-        
+    private var navigationTitleText: String {
+        if selectedMode == "card" {
+            return String(
+                localized: "card.title",
+                defaultValue: "Открытка",
+                bundle: appBundle(),
+                locale: appLocale()
+            )
+        }
+        return String(
+            localized: "popup.congrats.title",
+            defaultValue: "Поздравление",
+            bundle: appBundle(),
+            locale: appLocale()
+        )
+    }
+
     // MARK: - Card Generation State & Handlers
     @State private var referenceImage: UIImage? = nil
     @State private var showImagePicker: Bool = false
