@@ -100,8 +100,8 @@ struct AIBirthdayReminderAppApp: App {
                 .environment(\.locale, lang.locale)
                 .task {
                     store.startTransactionListener()
+                    await store.syncEntitlementsOnAppLaunch()
                     await store.loadProducts()
-                    await store.synchronizeActiveSubscriptionsWithServer()
                 }
         }
     }

@@ -1,9 +1,11 @@
 import Foundation
+import os.log
 import StoreKit
 import UIKit
 
 @MainActor
 final class StoreKitManager: ObservableObject {
+    private let logger = Logger(subsystem: "com.aibirthday.aibirthdayreminderapp", category: "StoreKitManager")
     @Published var products: [Product] = []
     @Published var purchasedTokenCount: Int = 0 {
         didSet { UserDefaults.standard.set(purchasedTokenCount, forKey: Self.tokensKey) }
@@ -38,6 +40,7 @@ final class StoreKitManager: ObservableObject {
     }()
 
     init() {
+        logger.debug("StoreKitManager init")
         if let saved = UserDefaults.standard.object(forKey: Self.tokensKey) as? Int {
             self.purchasedTokenCount = saved
         }
@@ -123,6 +126,13 @@ final class StoreKitManager: ObservableObject {
         return nil
     }
 
+    private func isActiveSubscriptionTransaction(_ transaction: Transaction) -> Bool {
+        guard subscriptionIDs.contains(transaction.productID) else { return false }
+        if transaction.isUpgraded { return false }
+        if let revokedAt = transaction.revocationDate, revokedAt <= Date() { return false }
+        return true
+    }
+
     private func approxExpiry(for productId: String, from start: Date = Date()) -> Date {
         if productId.contains("weekly") {
             return Calendar.current.date(byAdding: .day, value: 7, to: start) ?? start
@@ -205,7 +215,11 @@ final class StoreKitManager: ObservableObject {
     }
 
     private func syncSubscriptionToServer(transaction: Transaction?, productId: String, period: String, expiresAt: Date, isActive: Bool) async {
-        guard let token = currentJWT() else { return }
+        guard let token = currentJWT() else {
+            logger.debug("syncSubscriptionToServer skipped — no JWT")
+            return
+        }
+        logger.log("syncSubscriptionToServer start product=\(productId, privacy: .public) tx=\(transaction?.id ?? 0, privacy: .public)")
         var req = URLRequest(url: baseURL.appendingPathComponent("/api/subscriptions/sync"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -224,17 +238,28 @@ final class StoreKitManager: ObservableObject {
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
-            if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
-                if let decoded = try? JSONDecoder().decode(SubscriptionStatus.self, from: data) {
-                    self.applySubscriptionStatus(decoded)
+            if let http = response as? HTTPURLResponse {
+                logger.log("syncSubscriptionToServer status=\(http.statusCode)")
+                if (200..<300).contains(http.statusCode) {
+                    if let decoded = try? JSONDecoder().decode(SubscriptionStatus.self, from: data) {
+                        self.applySubscriptionStatus(decoded)
+                    }
+                } else {
+                    let bodyString = String(data: data, encoding: .utf8) ?? "<non-utf8>"
+                    logger.error("syncSubscriptionToServer unexpected status=\(http.statusCode) body=\(bodyString, privacy: .public)")
                 }
             }
-        } catch { /* ignore network blips */ }
+        } catch {
+            logger.error("syncSubscriptionToServer error: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Optionally fetch server-side subscription/tokens snapshot
     func fetchSubscriptionStatus() async {
-        guard let token = currentJWT() else { return }
+        guard let token = currentJWT() else {
+            logger.debug("fetchSubscriptionStatus skipped — no JWT")
+            return
+        }
         var req = URLRequest(url: baseURL.appendingPathComponent("/api/subscriptions/status"))
         req.httpMethod = "GET"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -242,10 +267,12 @@ final class StoreKitManager: ObservableObject {
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
+                logger.log("fetchSubscriptionStatus status=\(http.statusCode)")
                 if let decoded = try? JSONDecoder().decode(SubscriptionStatus.self, from: data) {
                     self.applySubscriptionStatus(decoded)
                 }
             } else if let http = response as? HTTPURLResponse, http.statusCode == 404 {
+                logger.log("fetchSubscriptionStatus status=404")
                 hasPremium = false
                 activeSubscriptionProductId = nil
                 pendingSubscriptionProductId = nil
@@ -254,14 +281,19 @@ final class StoreKitManager: ObservableObject {
                 nextSubscriptionResetAt = nil
                 autoRenewStatus = nil
                 autoRenewProductId = nil
+            } else if let http = response as? HTTPURLResponse {
+                let body = String(data: data, encoding: .utf8) ?? "<non-utf8>"
+                logger.error("fetchSubscriptionStatus unexpected status=\(http.statusCode) body=\(body, privacy: .public)")
             }
-        } catch { /* ignore */ }
+        } catch {
+            logger.error("fetchSubscriptionStatus error: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Подтянуть баланс токенов с сервера (если есть JWT)
     func fetchServerTokens() async {
         guard let token = currentJWT() else {
-            // Нет JWT — пропускаем серверный вызов
+            logger.debug("fetchServerTokens skipped — no JWT")
             return
         }
         var req = URLRequest(url: baseURL.appendingPathComponent("/api/tokens"))
@@ -271,22 +303,27 @@ final class StoreKitManager: ObservableObject {
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
+                logger.log("fetchServerTokens status=\(http.statusCode)")
                 let decoded = try? JSONDecoder().decode(TokensResponse.self, from: data)
                 if let left = decoded?.tokens_left {
                     self.setBalance(left)
                 }
             } else {
+                if let http = response as? HTTPURLResponse {
+                    let body = String(data: data, encoding: .utf8) ?? "<non-utf8>"
+                    logger.error("fetchServerTokens unexpected status=\(http.statusCode) body=\(body, privacy: .public)")
+                }
                 // print("GET /api/tokens failed: \((response as? HTTPURLResponse)?.statusCode ?? -1)")
             }
         } catch {
-            // print("GET /api/tokens error: \(error)")
+            logger.error("fetchServerTokens error: \(error.localizedDescription, privacy: .public)")
         }
     }
 
     /// Подтверждение покупки токенов на сервере (идемпотентно по transaction_id)
     private func confirmTokensPurchase(productId: String, transaction: Transaction, quantity: Int = 1) async {
         guard let token = currentJWT() else {
-            // Нет JWT — fallback: локально инкрементируем, чтобы не ломать UX на деве
+            logger.debug("confirmTokensPurchase no JWT – local fallback")
             let add = tokensForProductID(productId)
             if add > 0 { self.addBalance(add) }
             return
@@ -304,19 +341,24 @@ final class StoreKitManager: ObservableObject {
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
-            if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
-                let decoded = try? JSONDecoder().decode(ConfirmResponse.self, from: data)
-                if let left = decoded?.tokens_left {
-                    self.setBalance(left)
+            if let http = response as? HTTPURLResponse {
+                if (200..<300).contains(http.statusCode) {
+                    logger.log("confirmTokensPurchase status=\(http.statusCode)")
+                    let decoded = try? JSONDecoder().decode(ConfirmResponse.self, from: data)
+                    if let left = decoded?.tokens_left {
+                        self.setBalance(left)
+                    } else {
+                        logger.log("confirmTokensPurchase missing tokens_left; applying fallback")
+                        let add = tokensForProductID(productId)
+                        if add > 0 { self.addBalance(add) }
+                    }
                 } else {
-                    // Если сервер не вернул tokens_left, локально прибавим как fallback
-                    let add = tokensForProductID(productId)
-                    if add > 0 { self.addBalance(add) }
+                    let body = String(data: data, encoding: .utf8) ?? "<non-utf8>"
+                    logger.error("confirmTokensPurchase unexpected status=\(http.statusCode) body=\(body, privacy: .public)")
                 }
-            } else {
-                // Server rejected confirm; do not locally credit to keep server authoritative
             }
         } catch {
+            logger.error("confirmTokensPurchase error: \(error.localizedDescription, privacy: .public)")
             // Network error; do not locally credit to avoid desync
         }
     }
@@ -337,9 +379,11 @@ final class StoreKitManager: ObservableObject {
             for await update in Transaction.updates {
                 do {
                     let transaction = try Self.verify(update)
+                    logger.log("Transaction.update id=\(transaction.id, privacy: .public) product=\(transaction.productID, privacy: .public)")
                     await transaction.finish()
                     await self.handlePurchase(transaction: transaction)
                 } catch {
+                    logger.error("Transaction.update verification failed: \(error.localizedDescription, privacy: .public)")
                     // Failed verification; ignore but keep listening
                 }
             }
@@ -352,6 +396,82 @@ final class StoreKitManager: ObservableObject {
         return true
     }
 
+    /// Perform a lightweight entitlement sync flow for cold app launches.
+    func syncEntitlementsOnAppLaunch() async {
+        let expectedIds = consumableIDs.union(subscriptionIDs)
+        let knownIds = Set(products.map { $0.id })
+
+        if !expectedIds.isSubset(of: knownIds) {
+            do {
+                let fetched = try await Task.detached(priority: .userInitiated) {
+                    try await Product.products(for: expectedIds)
+                }.value
+                await MainActor.run {
+                    self.products = fetched
+                }
+            } catch {
+                logger.error("syncEntitlementsOnAppLaunch preload error: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        var activeTransaction: Transaction?
+        for await entitlement in Transaction.currentEntitlements {
+            guard case .verified(let transaction) = entitlement,
+                  isActiveSubscriptionTransaction(transaction) else { continue }
+
+            if let current = activeTransaction {
+                let currentExpiry = current.expirationDate ?? approxExpiry(for: current.productID, from: current.purchaseDate)
+                let candidateExpiry = transaction.expirationDate ?? approxExpiry(for: transaction.productID, from: transaction.purchaseDate)
+                if candidateExpiry > currentExpiry {
+                    activeTransaction = transaction
+                }
+            } else {
+                activeTransaction = transaction
+            }
+        }
+
+        guard currentJWT() != nil else {
+            await MainActor.run {
+                if let transaction = activeTransaction {
+                    let expires = transaction.expirationDate ?? self.approxExpiry(for: transaction.productID, from: transaction.purchaseDate)
+                    self.hasPremium = true
+                    self.activeSubscriptionProductId = transaction.productID
+                    self.subscriptionExpiresAt = expires
+                    self.nextSubscriptionResetAt = nil
+                    self.pendingSubscriptionProductId = nil
+                    self.pendingSubscriptionEffectiveDate = nil
+                    self.autoRenewStatus = nil
+                    self.autoRenewProductId = nil
+                } else {
+                    self.hasPremium = false
+                    self.activeSubscriptionProductId = nil
+                    self.subscriptionExpiresAt = nil
+                    self.nextSubscriptionResetAt = nil
+                    self.pendingSubscriptionProductId = nil
+                    self.pendingSubscriptionEffectiveDate = nil
+                    self.autoRenewStatus = nil
+                    self.autoRenewProductId = nil
+                }
+            }
+            return
+        }
+
+        if let transaction = activeTransaction {
+            let productId = transaction.productID
+            let period = periodFor(productId: productId) ?? "month"
+            let expiresAt = transaction.expirationDate ?? approxExpiry(for: productId, from: transaction.purchaseDate)
+            logger.log("syncEntitlementsOnAppLaunch active tx=\(transaction.id, privacy: .public) product=\(productId, privacy: .public)")
+            await syncSubscriptionToServer(transaction: transaction,
+                                           productId: productId,
+                                           period: period,
+                                           expiresAt: expiresAt,
+                                           isActive: true)
+        } else {
+            logger.log("syncEntitlementsOnAppLaunch no active transaction; fetching status")
+            await fetchSubscriptionStatus()
+        }
+    }
+
     /// Refresh current subscription status based on current entitlements
     func refreshSubscriptionStatus() async {
         var premium = false
@@ -359,7 +479,7 @@ final class StoreKitManager: ObservableObject {
         for await entitlement in Transaction.currentEntitlements {
             switch entitlement {
             case .verified(let t):
-                if subscriptionIDs.contains(t.productID) {
+                if isActiveSubscriptionTransaction(t) {
                     premium = true
                     currentId = t.productID
                 }
@@ -367,8 +487,14 @@ final class StoreKitManager: ObservableObject {
                 continue
             }
         }
-        if hasPremium != premium { hasPremium = premium }
-        if activeSubscriptionProductId != currentId { activeSubscriptionProductId = currentId }
+        if hasPremium != premium {
+            hasPremium = premium
+            logger.log("refreshSubscriptionStatus hasPremium=\(premium)")
+        }
+        if activeSubscriptionProductId != currentId {
+            activeSubscriptionProductId = currentId
+            logger.log("refreshSubscriptionStatus activeProduct=\(currentId ?? "nil", privacy: .public)")
+        }
     }
 
     /// Helper to unwrap verified transactions
@@ -393,7 +519,7 @@ final class StoreKitManager: ObservableObject {
             await fetchSubscriptionConfig()
             debugPrintActiveTransactions()
         } catch {
-            print("Ошибка загрузки продуктов: \(error)")
+            logger.error("loadProducts error: \(error.localizedDescription, privacy: .public)")
         }
     }
     
@@ -411,17 +537,17 @@ final class StoreKitManager: ObservableObject {
                     await handlePurchase(transaction: transaction)
                     await transaction.finish()
                 case .unverified(_, let error):
-                    print("Покупка НЕ подтверждена: \(error.localizedDescription)")
+                    logger.error("purchase verification failed: \(error.localizedDescription, privacy: .public)")
                 }
             case .userCancelled:
-                print("Покупка отменена пользователем")
+                logger.log("purchase cancelled by user")
             case .pending:
-                print("Покупка в ожидании")
+                logger.log("purchase pending")
             @unknown default:
-                print("Неизвестный результат покупки")
+                logger.error("purchase returned unknown result")
             }
         } catch {
-            print("Ошибка во время покупки: \(error)")
+            logger.error("purchase error: \(error.localizedDescription, privacy: .public)")
             pendingPurchaseProductId = nil
         }
     }
@@ -433,11 +559,11 @@ final class StoreKitManager: ObservableObject {
         if force {
             forgetHandledTransaction(transactionId)
         } else if hasProcessedTransaction(transactionId) {
-            print("[StoreKit] skipping duplicate transaction:", transactionId)
+            logger.log("handlePurchase skip duplicate tx=\(transactionId, privacy: .public)")
             return
         }
 
-        print("➡️ purchase tx:", transactionId)
+        logger.log("handlePurchase tx=\(transactionId, privacy: .public) product=\(productId, privacy: .public)")
         defer {
             rememberHandledTransaction(transactionId)
             pendingPurchaseProductId = nil
@@ -446,11 +572,15 @@ final class StoreKitManager: ObservableObject {
         if consumableIDs.contains(productId) {
             // Подтверждаем покупку токенов на сервере (идемпотентно)
             await confirmTokensPurchase(productId: productId, transaction: transaction, quantity: 1)
-            print("[Store] Tokens updated, current balance: \(purchasedTokenCount)")
+            logger.log("confirmTokensPurchase completed balance=\(self.purchasedTokenCount)")
         } else if subscriptionIDs.contains(productId) {
+            guard isActiveSubscriptionTransaction(transaction) else {
+                logger.log("handlePurchase ignoring inactive/upgrade tx=\(transactionId, privacy: .public)")
+                return
+            }
             let effectiveProductId: String = {
                 if let pending = pendingPurchaseProductId, pending != productId, subscriptionIDs.contains(pending) {
-                    print("⚠️ purchase mismatch, using pending product id \(pending) instead of \(productId)")
+                    logger.log("handlePurchase pending mismatch, using pending product=\(pending, privacy: .public)")
                     return pending
                 }
                 return productId
@@ -458,7 +588,7 @@ final class StoreKitManager: ObservableObject {
 
             hasPremium = true
             activeSubscriptionProductId = effectiveProductId
-            print("Premium подписка активирована!")
+            logger.log("handlePurchase premium activated product=\(effectiveProductId, privacy: .public)")
             let period = periodFor(productId: effectiveProductId) ?? "month"
             let exp = transaction.expirationDate ?? approxExpiry(for: effectiveProductId, from: transaction.purchaseDate)
             await syncSubscriptionToServer(transaction: transaction, productId: effectiveProductId, period: period, expiresAt: exp, isActive: true)
@@ -471,6 +601,7 @@ final class StoreKitManager: ObservableObject {
         for await result in Transaction.currentEntitlements {
             switch result {
             case .verified(let transaction):
+                guard isActiveSubscriptionTransaction(transaction) || consumableIDs.contains(transaction.productID) else { continue }
                 await handlePurchase(transaction: transaction, force: true)
             case .unverified(_, _):
                 // Обычно игнорируется для восстановления
@@ -485,7 +616,7 @@ final class StoreKitManager: ObservableObject {
         for await result in Transaction.currentEntitlements {
             switch result {
             case .verified(let transaction):
-                guard subscriptionIDs.contains(transaction.productID) else { continue }
+                guard isActiveSubscriptionTransaction(transaction) else { continue }
                 await handlePurchase(transaction: transaction, force: force)
             case .unverified:
                 continue
@@ -506,7 +637,7 @@ final class StoreKitManager: ObservableObject {
         for await result in Transaction.currentEntitlements {
             switch result {
             case .verified(let transaction):
-                if subscriptionIDs.contains(transaction.productID) {
+                if isActiveSubscriptionTransaction(transaction) {
                     return transaction
                 }
             case .unverified:
@@ -608,7 +739,7 @@ final class StoreKitManager: ObservableObject {
             for await result in Transaction.currentEntitlements {
                 switch result {
                 case .verified(let transaction):
-                    guard subscriptionIDs.contains(transaction.productID) else { continue }
+                    guard isActiveSubscriptionTransaction(transaction) else { continue }
                     print("[StoreKit] tx id=\(transaction.id) original=\(transaction.originalID) product=\(transaction.productID)")
                 case .unverified:
                     continue
