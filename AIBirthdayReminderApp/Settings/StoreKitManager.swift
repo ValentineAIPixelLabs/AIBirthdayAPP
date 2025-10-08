@@ -26,6 +26,9 @@ final class StoreKitManager: ObservableObject {
     private var handledTransactionIds: Set<String> = []
     private var handledTransactionsOrder: [String] = []
     private let handledTransactionsLimit = 128
+    private var signedTransactionPayloads: [UInt64: String] = [:]
+    private var signedTransactionPayloadOrder: [UInt64] = []
+    private let signedPayloadCacheLimit = 64
 
     private static let tokensKey = "StoreKitManager.purchasedTokenCount"
     private let defaultSubscriptionAllowances: [String: Int] = [
@@ -97,6 +100,24 @@ final class StoreKitManager: ObservableObject {
         } else {
             DispatchQueue.main.async { self.purchasedTokenCount += delta }
         }
+    }
+
+    private func storeSignedTransactionPayload(_ verification: VerificationResult<Transaction>) {
+        guard case .verified(let transaction) = verification else { return }
+        signedTransactionPayloads[transaction.id] = verification.jwsRepresentation
+        if let existing = signedTransactionPayloadOrder.firstIndex(of: transaction.id) {
+            signedTransactionPayloadOrder.remove(at: existing)
+        }
+        signedTransactionPayloadOrder.append(transaction.id)
+        if signedTransactionPayloadOrder.count > signedPayloadCacheLimit,
+           let oldest = signedTransactionPayloadOrder.first {
+            signedTransactionPayloadOrder.removeFirst()
+            signedTransactionPayloads.removeValue(forKey: oldest)
+        }
+    }
+
+    private func signedTransactionPayload(for transaction: Transaction) -> String? {
+        signedTransactionPayloads[transaction.id]
     }
 
     private func hasProcessedTransaction(_ id: String) -> Bool {
@@ -238,9 +259,8 @@ final class StoreKitManager: ObservableObject {
         if let txn = transaction {
             body["transaction_id"] = String(txn.id)
             body["original_transaction_id"] = String(txn.originalID)
-            body["signed_transaction_info"] = txn.signedData
-            if let renewalSigned = await renewalInfoSignedData(for: txn) {
-                body["signed_renewal_info"] = renewalSigned
+            if let signedJWS = signedTransactionPayload(for: txn) {
+                body["signed_transaction_info"] = signedJWS
             }
         }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -328,17 +348,6 @@ final class StoreKitManager: ObservableObject {
         }
     }
 
-    private func renewalInfoSignedData(for transaction: Transaction) async -> String? {
-        do {
-            if let renewalInfo = try await transaction.renewalInfo {
-                return renewalInfo.signedData
-            }
-        } catch {
-            logger.error("renewalInfoSignedData error: \(error.localizedDescription, privacy: .public)")
-        }
-        return nil
-    }
-
     /// Подтверждение покупки токенов на сервере (идемпотентно по transaction_id)
     private func confirmTokensPurchase(productId: String, transaction: Transaction, quantity: Int = 1) async {
         guard let token = requireAppAccountToken() else {
@@ -396,6 +405,9 @@ final class StoreKitManager: ObservableObject {
         transactionUpdatesTask = Task(priority: .background) { [weak self] in
             guard let self else { return }
             for await update in Transaction.updates {
+                await MainActor.run { [weak self] in
+                    self?.storeSignedTransactionPayload(update)
+                }
                 do {
                     let transaction = try Self.verify(update)
                     logger.log("Transaction.update id=\(transaction.id, privacy: .public) product=\(transaction.productID, privacy: .public)")
@@ -435,6 +447,7 @@ final class StoreKitManager: ObservableObject {
 
         var activeTransaction: Transaction?
         for await entitlement in Transaction.currentEntitlements {
+            storeSignedTransactionPayload(entitlement)
             guard case .verified(let transaction) = entitlement,
                   isActiveSubscriptionTransaction(transaction) else { continue }
 
@@ -556,6 +569,7 @@ final class StoreKitManager: ObservableObject {
             case .success(let verification):
                 switch verification {
                 case .verified(let transaction):
+                    storeSignedTransactionPayload(verification)
                     await handlePurchase(transaction: transaction)
                     await transaction.finish()
                 case .unverified(_, let error):
@@ -623,6 +637,7 @@ final class StoreKitManager: ObservableObject {
         for await result in Transaction.currentEntitlements {
             switch result {
             case .verified(let transaction):
+                storeSignedTransactionPayload(result)
                 guard isActiveSubscriptionTransaction(transaction) || consumableIDs.contains(transaction.productID) else { continue }
                 await handlePurchase(transaction: transaction, force: true)
             case .unverified(_, _):
@@ -638,6 +653,7 @@ final class StoreKitManager: ObservableObject {
         for await result in Transaction.currentEntitlements {
             switch result {
             case .verified(let transaction):
+                storeSignedTransactionPayload(result)
                 guard isActiveSubscriptionTransaction(transaction) else { continue }
                 await handlePurchase(transaction: transaction, force: force)
             case .unverified:
@@ -659,6 +675,7 @@ final class StoreKitManager: ObservableObject {
         for await result in Transaction.currentEntitlements {
             switch result {
             case .verified(let transaction):
+                storeSignedTransactionPayload(result)
                 if isActiveSubscriptionTransaction(transaction) {
                     return transaction
                 }
