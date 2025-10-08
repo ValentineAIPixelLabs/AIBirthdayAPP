@@ -155,7 +155,9 @@ final class StoreKitManager: ObservableObject {
     private func isActiveSubscriptionTransaction(_ transaction: Transaction) -> Bool {
         guard subscriptionIDs.contains(transaction.productID) else { return false }
         if transaction.isUpgraded { return false }
-        if let revokedAt = transaction.revocationDate, revokedAt <= Date() { return false }
+        let now = Date()
+        if let revokedAt = transaction.revocationDate, revokedAt <= now { return false }
+        if let expiresAt = transaction.expirationDate, expiresAt <= now { return false }
         return true
     }
 
