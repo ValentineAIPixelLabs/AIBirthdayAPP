@@ -238,6 +238,10 @@ final class StoreKitManager: ObservableObject {
         if let txn = transaction {
             body["transaction_id"] = String(txn.id)
             body["original_transaction_id"] = String(txn.originalID)
+            body["signed_transaction_info"] = txn.signedData
+            if let renewalSigned = await renewalInfoSignedData(for: txn) {
+                body["signed_renewal_info"] = renewalSigned
+            }
         }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
@@ -322,6 +326,17 @@ final class StoreKitManager: ObservableObject {
         } catch {
             logger.error("fetchServerTokens error: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    private func renewalInfoSignedData(for transaction: Transaction) async -> String? {
+        do {
+            if let renewalInfo = try await transaction.renewalInfo {
+                return renewalInfo.signedData
+            }
+        } catch {
+            logger.error("renewalInfoSignedData error: \(error.localizedDescription, privacy: .public)")
+        }
+        return nil
     }
 
     /// Подтверждение покупки токенов на сервере (идемпотентно по transaction_id)
