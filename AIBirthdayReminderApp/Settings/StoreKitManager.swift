@@ -20,6 +20,7 @@ final class StoreKitManager: ObservableObject {
     @Published var autoRenewStatus: Bool? = nil
     @Published var autoRenewProductId: String? = nil
     @Published var consumptionReportingOptIn: Bool = false
+    @Published var subscriptionGroupID: String? = nil
 
     // Listener task for StoreKit transaction updates
     private var transactionUpdatesTask: Task<Void, Never>?
@@ -587,6 +588,9 @@ final class StoreKitManager: ObservableObject {
         do {
             let ids = consumableIDs.union(subscriptionIDs)
             products = try await Product.products(for: ids)
+            if let group = products.compactMap({ $0.subscription?.subscriptionGroupID }).first {
+                subscriptionGroupID = group
+            }
             await refreshSubscriptionStatus()
             await fetchServerTokens()
             await fetchSubscriptionStatus()
@@ -629,6 +633,8 @@ final class StoreKitManager: ObservableObject {
             pendingPurchaseProductId = nil
         }
     }
+
+
     
     // Обработка успешной покупки (MVP)
     private func handlePurchase(transaction: Transaction, force: Bool = false) async {

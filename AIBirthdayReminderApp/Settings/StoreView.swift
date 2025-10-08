@@ -6,21 +6,6 @@ struct PaywallView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @EnvironmentObject var store: StoreKitManager
-    @State private var selectedProduct: Product? = nil
-    @State private var isCTAEnabled: Bool = false
-
-    private func orderIndex(_ id: String) -> Int {
-        if id.contains("weekly") { return 0 }
-        if id.contains("monthly") { return 1 }
-        if id.contains("yearly") { return 2 }
-        return 99
-    }
-
-    var subscriptionProducts: [Product] {
-        store.products
-            .filter { store.subscriptionIDs.contains($0.id) }
-            .sorted { a, b in orderIndex(a.id) < orderIndex(b.id) }
-    }
 
     // MARK: - Body
     var body: some View {
@@ -28,17 +13,12 @@ struct PaywallView: View {
             ZStack {
                 DarkPurpleBackground().ignoresSafeArea()
 
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 20) {
-                        headerSection
-                        benefitSection
-                        planSection
-                        bottomActionSection
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    .padding(.bottom, 18)
-                    .frame(maxWidth: .infinity)
+                if #available(iOS 17.0, *),
+                   let groupID = store.subscriptionGroupID,
+                   !store.subscriptionIDs.isEmpty {
+                    ios17Content(groupID: groupID)
+                } else {
+                    legacyContent
                 }
             }
             .toolbarBackground(.clear, for: .navigationBar)
@@ -56,16 +36,6 @@ struct PaywallView: View {
             await store.loadProducts()
             await store.refreshSubscriptionStatus()
             await store.fetchSubscriptionStatus()
-            updateDefaultSelection()
-            updateCTAEnabled()
-        }
-        .onChange(of: store.activeSubscriptionProductId) { _ in
-            updateDefaultSelection()
-            updateCTAEnabled()
-        }
-        .onChange(of: store.products) { _ in
-            updateDefaultSelection()
-            updateCTAEnabled()
         }
     }
 
@@ -116,181 +86,111 @@ struct PaywallView: View {
     }
 
     @ViewBuilder
-    private var planSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if subscriptionProducts.isEmpty {
-                HStack(spacing: 12) {
-                    ProgressView().tint(.white)
-                    Text("Загружаем предложения…")
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.75))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(20)
-                .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.white.opacity(0.06))
-                )
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(subscriptionProducts, id: \.id) { product in
-                        let isActive = store.activeSubscriptionProductId == product.id
-                        let isDisabled = isActive
-
-                        PlanRow(
-                            product: product,
-                            isSelected: selectedProduct?.id == product.id,
-                            isActive: isActive,
-                            isDisabled: isDisabled,
-                            allowance: store.allowance(for: product.id),
-                            onTap: {
-                                guard !isDisabled else { return }
-                                selectedProduct = product
-                                updateCTAEnabled()
-                            }
-                        )
-                    }
-                }
+    private func ios17Content(groupID: String) -> some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 28) {
+                headerSection
+                benefitSection
+                ios17StoreCard(groupID: groupID)
+                legalSection
             }
+            .padding(.horizontal, 28)
+            .padding(.top, 36)
+            .padding(.bottom, 44)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var legacyContent: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 24) {
+                headerSection
+                benefitSection
+                legacyStoreCard
+                legalSection
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 28)
+            .padding(.bottom, 40)
+            .frame(maxWidth: .infinity)
+        }
     }
 
     @ViewBuilder
-    private var bottomActionSection: some View {
-        VStack(spacing: 10) {
-            Button {
-                guard let product = selectedProduct, isCTAEnabled else { return }
-                Task {
-                    if store.isDowngradeComparedToActive(product) {
-                        await store.presentManageSubscriptions()
-                    } else {
-                        await store.purchase(product: product)
-                    }
-                }
-            } label: {
-                Text(ctaTitle())
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(Color.white.opacity(isCTAEnabled ? 1.0 : 0.8))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(Color(hex: 0xB06BFF).opacity(isCTAEnabled ? 1.0 : 0.45))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(Color.white.opacity(isCTAEnabled ? 0.25 : 0.12), lineWidth: 1)
-                    )
-            }
-            .buttonStyle(.plain)
-            .disabled(!isCTAEnabled)
-
-            HStack(spacing: 24) {
-                Button("Условия") {
-                    if let url = URL(string: "https://aibirthday.app/terms") {
-                        openURL(url)
-                    }
-                }
-
-                Button("Конфиденциальность") {
-                    if let url = URL(string: "https://aibirthday.app/privacy") {
-                        openURL(url)
-                    }
-                }
-
-                Button("Восстановить") {
-                    Task { await store.restorePurchases() }
-                }
-            }
-            .font(.footnote)
-            .foregroundStyle(.white.opacity(0.85))
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 16)
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Helpers (selection)
-    private func activeProduct() -> Product? {
-        guard let id = store.activeSubscriptionProductId else { return nil }
-        return subscriptionProducts.first(where: { $0.id == id })
-    }
-
-    // MARK: - Selection/CTA logic
-    private func updateDefaultSelection() {
-        guard !subscriptionProducts.isEmpty else { return }
-
-        // Сортируем по цене (дороже – дальше)
-        let byPriceAsc = subscriptionProducts.sorted { a, b in
-            a.price < b.price
-        }
-
-        if let active = activeProduct() {
-            // Ищем следующий более дорогой, чем активный
-            if let nextHigher = byPriceAsc.first(where: { $0.price > active.price }) {
-                selectedProduct = nextHigher
-            } else {
-                // Активен самый дорогой: выделяем его (CTA будет выключена)
-                selectedProduct = active
-            }
+    private func ios17StoreCard(groupID: String) -> some View {
+        if #available(iOS 17.0, *), !store.subscriptionIDs.isEmpty {
+            SubscriptionStoreContainer(groupID: groupID,
+                                       productIDs: Array(store.subscriptionIDs))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(Color.white.opacity(0.1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 28)
+                                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                        )
+                        .shadow(color: .black.opacity(0.3), radius: 22, y: 18)
+                )
         } else {
-            // Нет активной подписки — выбираем самый дорогой (годовой)
-            selectedProduct = byPriceAsc.last ?? subscriptionProducts.first
+            legacyStoreCard
         }
     }
 
-    private func updateCTAEnabled() {
-        guard let sel = selectedProduct else { isCTAEnabled = false; return }
-        // CTA недоступна, если выбран активный продукт и он уже самый дорогой план
-        if let active = activeProduct() {
-            if sel.id == active.id {
-                let byPriceAsc = subscriptionProducts.sorted { $0.price < $1.price }
-                let isMax = (active.id == byPriceAsc.last?.id)
-                isCTAEnabled = !isMax
-                return
+    @ViewBuilder
+    private var legacyStoreCard: some View {
+        if store.subscriptionIDs.isEmpty {
+            HStack(spacing: 12) {
+                ProgressView().tint(.white)
+                Text("Загружаем предложения…")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.75))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 32)
+            .background(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+            )
+        } else {
+            LegacySubscriptionList(
+                products: store.products.filter { store.subscriptionIDs.contains($0.id) },
+                allow: { store.allowance(for: $0.id) },
+                purchase: { product in await store.purchase(product: product) }
+            )
+            .background(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+                    .shadow(color: .black.opacity(0.3), radius: 22, y: 18)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var legalSection: some View {
+        HStack(spacing: 24) {
+            Button("Условия") {
+                if let url = URL(string: "https://aibirthday.app/terms") {
+                    openURL(url)
+                }
+            }
+
+            Button("Конфиденциальность") {
+                if let url = URL(string: "https://aibirthday.app/privacy") {
+                    openURL(url)
+                }
+            }
+
+            Button("Управлять") {
+                Task { await store.presentManageSubscriptions() }
             }
         }
-        isCTAEnabled = true
+        .font(.footnote)
+        .foregroundStyle(.white.opacity(0.85))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
     }
 
-    // MARK: - CTA title
-    private func ctaTitle() -> String {
-        guard let p = selectedProduct else { return "Выберите план" }
-
-        if store.isDowngradeComparedToActive(p) {
-            return "Управлять подпиской в App Store"
-        }
-
-        if let active = activeProduct(), active.id == p.id {
-            let byPriceAsc = subscriptionProducts.sorted { $0.price < $1.price }
-            if p.id == byPriceAsc.last?.id {
-                return "Максимальный план активен"
-            }
-        }
-
-        return "Перейти за \(p.displayPrice) \(periodAccusative(for: p))"
-    }
-
-    // MARK: - Period phrase for CTA (accusative)
-    private func periodAccusative(for product: Product) -> String {
-        guard let sub = product.subscription else {
-            let id = product.id.lowercased()
-            if id.contains("weekly") { return "в неделю" }
-            if id.contains("monthly") { return "в месяц" }
-            if id.contains("yearly") { return "в год" }
-            return ""
-        }
-        let value = sub.subscriptionPeriod.value
-        switch sub.subscriptionPeriod.unit {
-        case .week:  return value == 1 ? "в неделю" : "на \(value) нед."
-        case .month: return value == 1 ? "в месяц" : "на \(value) мес."
-        case .year:  return value == 1 ? "в год"   : "на \(value) г."
-        case .day:   return value == 1 ? "в день"  : "на \(value) дн."
-        @unknown default: return ""
-        }
-    }
 }
 
 private struct BenefitRow: View {
@@ -317,97 +217,74 @@ private struct BenefitRow: View {
     }
 }
 
-// MARK: - Plan row with larger/bolder period and checkbox to the right of price
-private struct PlanRow: View {
-    let product: Product
-    let isSelected: Bool
-    let isActive: Bool
-    let isDisabled: Bool
-    let allowance: Int
-    let onTap: () -> Void
+private struct LegacySubscriptionList: View {
+    let products: [Product]
+    let allow: (Product) -> Int
+    let purchase: (Product) async -> Void
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                // Left: title + period + allowance
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(product.displayName)
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(isDisabled ? .white.opacity(0.6) : .white)
-                        .lineLimit(1)
-
-                    // Период: крупнее и жирнее
-                    Text(periodTitle(for: product))
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(isDisabled ? .white.opacity(0.6) : .white)
-
-                    Text("\(allowance) токенов")
-                        .font(.subheadline)
-                        .foregroundStyle(isDisabled ? .white.opacity(0.5) : .white.opacity(0.9))
-                }
-                Spacer()
-
-                // Right: price + checkbox в одну строку
-                HStack(spacing: 10) {
-                    Text(product.displayPrice)
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(isDisabled ? .white.opacity(0.65) : .white)
-                        .monospacedDigit()
-
-                    ZStack {
-                        Circle()
-                            .stroke(
-                                isActive ? .white.opacity(0.35) : .white.opacity(isSelected ? 0.9 : 0.35),
-                                lineWidth: isSelected ? 3 : 2.5
-                            )
-                            .frame(width: 24, height: 24)
-                        if isSelected {
-                            Circle()
-                                .fill(Color.white.opacity(isDisabled ? 0.5 : 1.0))
-                                .frame(width: 12, height: 12)
-                        }
-                    }
-                    .accessibilityHidden(true)
+        VStack(spacing: 16) {
+            ForEach(products) { product in
+                LegacySubscriptionRow(product: product,
+                                      allowance: allow(product)) {
+                    await purchase(product)
                 }
             }
-            .contentShape(Rectangle())
-            .padding(.vertical, 10)
-            .padding(.horizontal, 16)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 28)
+    }
+}
+
+private struct LegacySubscriptionRow: View {
+    let product: Product
+    let allowance: Int
+    let purchase: () async -> Void
+
+    var body: some View {
+        Button {
+            Task { await purchase() }
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(product.displayName)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text(product.displayPrice)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.white)
+                        .monospacedDigit()
+                }
+                Text(periodTitle(for: product))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                Text("\(allowance) токенов")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.75))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color(hex: 0x5D2A8F).opacity(isDisabled ? 0.55 : 0.90),
-                                     Color(hex: 0x4B1C77).opacity(isDisabled ? 0.65 : 0.98)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 18)
-                            .stroke(
-                                isActive
-                                ? Color.white.opacity(0.25) // полупрозрачная обводка для активного
-                                : (isSelected ? .white.opacity(0.9) : .white.opacity(0.08)),
-                                lineWidth: isSelected ? 2 : 1
-                            )
+                        RoundedRectangle(cornerRadius: 22)
+                            .stroke(Color.white.opacity(0.16), lineWidth: 1)
                     )
             )
-            .opacity(isDisabled && !isActive ? 0.85 : 1.0)
         }
         .buttonStyle(.plain)
-        .disabled(isDisabled) // активный тариф нельзя выбрать повторно
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(product.displayName), \(allowance) токенов, \(periodTitle(for: product)), цена \(product.displayPrice)\(isActive ? ", уже активен" : "")")
     }
 
     private func periodTitle(for product: Product) -> String {
         if let sub = product.subscription {
             switch sub.subscriptionPeriod.unit {
-            case .week:  return sub.subscriptionPeriod.value == 1 ? "Неделя" : "Каждые \(sub.subscriptionPeriod.value) нед."
-            case .month: return sub.subscriptionPeriod.value == 1 ? "Месяц"  : "Каждые \(sub.subscriptionPeriod.value) мес."
-            case .year:  return sub.subscriptionPeriod.value == 1 ? "Год"    : "Каждые \(sub.subscriptionPeriod.value) г."
-            case .day:   return sub.subscriptionPeriod.value == 1 ? "День"   : "Каждые \(sub.subscriptionPeriod.value) дн."
+            case .week: return sub.subscriptionPeriod.value == 1 ? "Неделя" : "Каждые \(sub.subscriptionPeriod.value) нед."
+            case .month: return sub.subscriptionPeriod.value == 1 ? "Месяц" : "Каждые \(sub.subscriptionPeriod.value) мес."
+            case .year: return sub.subscriptionPeriod.value == 1 ? "Год" : "Каждые \(sub.subscriptionPeriod.value) г."
+            case .day: return sub.subscriptionPeriod.value == 1 ? "День" : "Каждые \(sub.subscriptionPeriod.value) дн."
             @unknown default: return "Период"
             }
         }
@@ -419,6 +296,7 @@ private struct PlanRow: View {
     }
 }
 
+// MARK: - Plan row with larger/bolder period and checkbox to the right of price
 // MARK: - Local, dark‑purple background for Paywall (усилен)
 private struct DarkPurpleBackground: View {
     @Environment(\.colorScheme) private var scheme
@@ -455,3 +333,20 @@ private extension Color {
         self = Color(.sRGB, red: r, green: g, blue: b, opacity: alpha)
     }
 }
+
+@available(iOS 17.0, *)
+private struct SubscriptionStoreContainer: View {
+    @EnvironmentObject var store: StoreKitManager
+    let groupID: String
+    let productIDs: [String]
+
+    var body: some View {
+        SubscriptionStoreView(productIDs: productIDs)
+            .tint(Color(hex: 0xB06BFF))
+            .subscriptionStatusTask(for: groupID) { _ in
+                await store.refreshSubscriptionStatus()
+            }
+            .storeButton(.visible, for: .restorePurchases)
+    }
+}
+

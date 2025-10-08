@@ -7,16 +7,6 @@
     "—" : {
 
     },
-    "%@, %lld токенов, %@, цена %@%@" : {
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@, %2$lld токенов, %3$@, цена %4$@%5$@"
-          }
-        }
-      }
-    },
     "%@: %@" : {
       "localizations" : {
         "ru" : {
@@ -508,7 +498,6 @@
     "Aspect ratio" : {
 
     },
-    
     "auth.token.missing" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3185,7 +3174,6 @@
         }
       }
     },
-    
     "settings.language" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3237,7 +3225,6 @@
         }
       }
     },
-    
     "signout.confirm.ok" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3272,7 +3259,6 @@
         }
       }
     },
-    
     "store.title" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3633,9 +3619,6 @@
     "Включить напоминания" : {
 
     },
-    "Восстановить" : {
-
-    },
     "Время" : {
 
     },
@@ -3697,6 +3680,9 @@
 
     },
     "Справка и поддержка" : {
+
+    },
+    "Управлять" : {
 
     },
     "Условия" : {
