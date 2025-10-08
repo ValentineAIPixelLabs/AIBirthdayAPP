@@ -119,6 +119,9 @@ class ContactsViewModel: NSObject, ObservableObject {
         }
         // Не запускаем FRC в init. Ждем нотификацию, что стор готов (.storageModeSwitched)
         setupStorageModeObserver()
+        if CoreDataManager.shared.hasLoadedStores {
+            startObservingContacts()
+        }
     }
     
     func addContact(_ contact: Contact) {
@@ -348,6 +351,7 @@ class ContactsViewModel: NSObject, ObservableObject {
 
     // MARK: - NSFetchedResultsController
     private func startObservingContacts() {
+        guard CoreDataManager.shared.hasLoadedStores else { return }
         let fetch: NSFetchRequest<ContactEntity> = ContactEntity.fetchRequest()
         fetch.fetchBatchSize = 50
         fetch.sortDescriptors = [NSSortDescriptor(key: "name", ascending: true, selector: #selector(NSString.localizedCaseInsensitiveCompare(_:)))]

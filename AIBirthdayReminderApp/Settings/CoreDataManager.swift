@@ -35,9 +35,14 @@ final class CoreDataManager {
     /// Проверяет, инициализирован ли CloudKit
     var isCloudKitEnabled: Bool { currentMode == .cloudKit }
     
-    /// Проверяет, вошел ли пользователь в аккаунт
+    /// Быстрый способ узнать, добавлены ли persistent stores
+    var hasLoadedStores: Bool {
+        !(persistentContainer.persistentStoreCoordinator.persistentStores.isEmpty)
+    }
+    
+    /// Считаем пользователя "зарегистрированным", если есть устойчивый токен устройства
     private var isUserSignedIn: Bool {
-        return AppleSignInManager.shared.currentAppleId != nil && AppleSignInManager.shared.currentJWTToken != nil
+        !DeviceAccountManager.shared.appAccountToken().isEmpty
     }
 
 
@@ -352,7 +357,7 @@ final class CoreDataManager {
 
     // MARK: - Mode Switching
     
-    /// Переключается на CloudKit режим (после входа в Apple ID)
+    /// Переключается на CloudKit режим (когда iCloud доступен и мы готовы синхронизироваться)
     func enableCloudKit() async throws {
         guard currentMode == .local else {
             print("⚠️ CloudKit уже включен")
@@ -416,7 +421,7 @@ final class CoreDataManager {
         }
     }
     
-    /// Переключается на локальный режим (после выхода из Apple ID)
+    /// Переключается на локальный режим (когда iCloud недоступен либо требуется оффлайн-режим)
     /// Зеркалирует актуальные данные из CloudKit в локальную базу
     func disableCloudKit() async {
         guard currentMode == .cloudKit else {
@@ -1074,4 +1079,3 @@ final class CoreDataManager {
 extension Notification.Name {
     static let storageModeSwitched = Notification.Name("storageModeSwitched")
 }
-

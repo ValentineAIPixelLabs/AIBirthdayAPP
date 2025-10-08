@@ -11,13 +11,7 @@ import ContactsUI
     @State private var showImportAlert = false
     @State private var importAlertMessage = ""
     @State private var showSubscription = false
-    @State private var showSubscriptionAuthAlert = false
     @State private var showImportOptions = false
-    @AppStorage("apple_id") private var appleId: String?
-    @State private var showAuthScreen = false
-    @State private var authCoverSignedIn = false
-    @State private var showSignOutAlert = false
-    @State private var suppressAuthAfterSignOut = false
     @State private var showSupport = false
 
     var body: some View {
@@ -26,11 +20,7 @@ import ContactsUI
 
                 Section(header: Text("settings.purchases.header")) {
                     Button {
-                        if appleId == nil {
-                            showSubscriptionAuthAlert = true
-                        } else {
-                            showSubscription = true
-                        }
+                        showSubscription = true
                     } label: {
                         Label("Подписка", systemImage: "star.circle")
                             .font(.headline)
@@ -90,32 +80,6 @@ import ContactsUI
                     }
                     .foregroundColor(.primary)
                 }
-                
-                Section(header: Text("settings.account")) {
-                    if appleId == nil {
-                        Button {
-                            // Present the same full-screen SignInView we use on first launch
-                            showAuthScreen = true
-                        } label: {
-                            Label("settings.account.signin",
-                                  systemImage: "person.crop.circle.badge.plus")
-                                .font(.headline)
-                                .padding(.vertical, 8)
-                        }
-                        .foregroundColor(.primary)
-                    } else {
-                        Button {
-                            // Ask user to confirm sign-out
-                            showSignOutAlert = true
-                        } label: {
-                            Label("settings.account.signout.apple",
-                                  systemImage: "rectangle.portrait.and.arrow.right")
-                                .font(.headline)
-                                .padding(.vertical, 8)
-                        }
-                        .foregroundColor(.primary)
-                    }
-                }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
@@ -173,73 +137,11 @@ import ContactsUI
             .alert(isPresented: $showImportAlert) {
                 Alert(title: Text("import.contacts.title"), message: Text(importAlertMessage), dismissButton: .default(Text("common.ok")))
             }
-            .alert(
-                "store.auth.required.title",
-                isPresented: $showSubscriptionAuthAlert
-            ) {
-                Button("common.cancel", role: .cancel) { }
-                Button("common.signin") {
-                    showAuthScreen = true
-                }
-            } message: {
-                Text("store.auth.required.message")
-            }
             .fullScreenCover(isPresented: $showSubscription) {
                 PaywallView()
             }
             .sheet(isPresented: $showSupport) {
                 SupportView()
-            }
-            .fullScreenCover(isPresented: $showAuthScreen) {
-                SignInView(isSignedIn: Binding(
-                    get: { authCoverSignedIn },
-                    set: { newValue in
-                        // Dismiss the auth sheet when SignInView reports success OR user chose to defer
-                        if newValue {
-                            showAuthScreen = false
-                        }
-                        // Mirror the value for completeness
-                        authCoverSignedIn = newValue
-                        // Sync appleId in case of real sign-in
-                        appleId = AppleSignInManager.shared.currentAppleId
-                    }
-                ))
-            }
-            .onChange(of: appleId) { newValue in
-                authCoverSignedIn = (newValue != nil)
-                if newValue == nil {
-                    // Do not auto-present auth after explicit sign-out
-                    showAuthScreen = false
-                    suppressAuthAfterSignOut = false
-                }
-            }
-            .onChange(of: authCoverSignedIn) { newValue in
-                if newValue { showAuthScreen = false }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
-                .receive(on: DispatchQueue.main)) { _ in
-                if showAuthScreen {
-                    let deferred = UserDefaults.standard.bool(forKey: "auth.deferredSignIn")
-                    if deferred {
-                        authCoverSignedIn = true
-                        showAuthScreen = false
-                    }
-                }
-            }
-            .alert(
-                "signout.confirm.title",
-                isPresented: $showSignOutAlert
-            ) {
-                Button("common.no", role: .cancel) { }
-                Button("signout.confirm.ok", role: .destructive) {
-                    Task { @MainActor in
-                        await AppleSignInManager.shared.signOut()
-                        appleId = nil
-                        authCoverSignedIn = false
-                        showAuthScreen = false
-                        suppressAuthAfterSignOut = true
-                    }
-                }
             }
         }
     }

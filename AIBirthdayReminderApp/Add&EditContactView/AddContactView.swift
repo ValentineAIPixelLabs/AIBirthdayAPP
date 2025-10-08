@@ -241,6 +241,20 @@ struct AddContactView: View {
             .scrollDismissesKeyboard(.interactively)
             .onTapGesture { focusedField = nil }
             .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(true)
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(String(localized: "common.save", defaultValue: "Сохранить", bundle: appBundle(), locale: appLocale())) {
+                    saveContact()
+                }
+                .disabled(!isSaveEnabled)
+            }
+            ToolbarItem(placement: .cancellationAction) {
+                Button(String(localized: "common.cancel", defaultValue: "Отмена", bundle: appBundle(), locale: appLocale())) {
+                    dismiss()
+                }
+            }
         }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {

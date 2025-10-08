@@ -64,9 +64,13 @@ final class StoreKitManager: ObservableObject {
     // MARK: - Backend wiring
     private let baseURL = URL(string: "https://aibirthday-backend.up.railway.app")!
 
-    private func currentJWT() -> String? {
-        // JWT, полученный и сохраненный AppleSignInManager после регистрации/логина
-        return AppleSignInManager.shared.currentJWTToken
+    private func currentAppAccountToken() -> String {
+        DeviceAccountManager.shared.appAccountToken()
+    }
+
+    private func requireAppAccountToken() -> String? {
+        let token = currentAppAccountToken()
+        return token.isEmpty ? nil : token
     }
 
     private func tokensForProductID(_ productId: String) -> Int {
@@ -215,8 +219,8 @@ final class StoreKitManager: ObservableObject {
     }
 
     private func syncSubscriptionToServer(transaction: Transaction?, productId: String, period: String, expiresAt: Date, isActive: Bool) async {
-        guard let token = currentJWT() else {
-            logger.debug("syncSubscriptionToServer skipped — no JWT")
+        guard let token = requireAppAccountToken() else {
+            logger.debug("syncSubscriptionToServer skipped — no device token")
             return
         }
         logger.log("syncSubscriptionToServer start product=\(productId, privacy: .public) tx=\(transaction?.id ?? 0, privacy: .public)")
@@ -224,7 +228,7 @@ final class StoreKitManager: ObservableObject {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
         var body: [String: Any] = [
             "product_id": productId,
             "period": period,
@@ -256,14 +260,14 @@ final class StoreKitManager: ObservableObject {
 
     /// Optionally fetch server-side subscription/tokens snapshot
     func fetchSubscriptionStatus() async {
-        guard let token = currentJWT() else {
-            logger.debug("fetchSubscriptionStatus skipped — no JWT")
+        guard let token = requireAppAccountToken() else {
+            logger.debug("fetchSubscriptionStatus skipped — no device token")
             return
         }
         var req = URLRequest(url: baseURL.appendingPathComponent("/api/subscriptions/status"))
         req.httpMethod = "GET"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
@@ -290,16 +294,16 @@ final class StoreKitManager: ObservableObject {
         }
     }
 
-    /// Подтянуть баланс токенов с сервера (если есть JWT)
+    /// Подтянуть баланс токенов с сервера (если есть device token)
     func fetchServerTokens() async {
-        guard let token = currentJWT() else {
-            logger.debug("fetchServerTokens skipped — no JWT")
+        guard let token = requireAppAccountToken() else {
+            logger.debug("fetchServerTokens skipped — no device token")
             return
         }
         var req = URLRequest(url: baseURL.appendingPathComponent("/api/tokens"))
         req.httpMethod = "GET"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
@@ -322,8 +326,8 @@ final class StoreKitManager: ObservableObject {
 
     /// Подтверждение покупки токенов на сервере (идемпотентно по transaction_id)
     private func confirmTokensPurchase(productId: String, transaction: Transaction, quantity: Int = 1) async {
-        guard let token = currentJWT() else {
-            logger.debug("confirmTokensPurchase no JWT – local fallback")
+        guard let token = requireAppAccountToken() else {
+            logger.debug("confirmTokensPurchase no device token – local fallback")
             let add = tokensForProductID(productId)
             if add > 0 { self.addBalance(add) }
             return
@@ -332,7 +336,7 @@ final class StoreKitManager: ObservableObject {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
         let body: [String: Any] = [
             "product_id": productId,
             "transaction_id": String(transaction.id),
@@ -430,7 +434,7 @@ final class StoreKitManager: ObservableObject {
             }
         }
 
-        guard currentJWT() != nil else {
+        guard requireAppAccountToken() != nil else {
             await MainActor.run {
                 if let transaction = activeTransaction {
                     let expires = transaction.expirationDate ?? self.approxExpiry(for: transaction.productID, from: transaction.purchaseDate)
@@ -529,7 +533,10 @@ final class StoreKitManager: ObservableObject {
             if product.subscription != nil {
                 pendingPurchaseProductId = product.id
             }
-            let result = try await product.purchase()
+            let options: Set<Product.PurchaseOption> = [
+                .appAccountToken(DeviceAccountManager.shared.appAccountUUID())
+            ]
+            let result = try await product.purchase(options: options)
             switch result {
             case .success(let verification):
                 switch verification {
@@ -718,11 +725,11 @@ final class StoreKitManager: ObservableObject {
 #endif
 
     private func fetchSubscriptionConfig() async {
-        guard let token = currentJWT() else { return }
+        guard let token = requireAppAccountToken() else { return }
         var req = URLRequest(url: baseURL.appendingPathComponent("/api/subscriptions/config"))
         req.httpMethod = "GET"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),

@@ -10,7 +10,9 @@ class HolidaysViewModel: ObservableObject {
 
     // MARK: - Init
     init() {
-        loadFromCoreData()
+        if CoreDataManager.shared.hasLoadedStores {
+            loadFromCoreData()
+        }
         setupStorageModeObserver()
     }
 
@@ -131,6 +133,7 @@ class HolidaysViewModel: ObservableObject {
     }
 
     @MainActor private func loadFromCoreData() {
+        guard CoreDataManager.shared.hasLoadedStores else { return }
         let ctx = CoreDataManager.shared.viewContext
         ctx.perform { [weak self] in
             // Загружаем все праздники
@@ -183,4 +186,3 @@ class HolidaysViewModel: ObservableObject {
         }
     }
 }
-

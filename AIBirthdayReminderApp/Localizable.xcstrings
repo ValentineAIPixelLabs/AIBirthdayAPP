@@ -508,53 +508,20 @@
     "Aspect ratio" : {
 
     },
-    "auth.continue.without.signin" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continue without signing in"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Продолжить без входа"
-          }
-        }
-      }
-    },
-    "auth.guest.hint" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continue without signing in. You can sign in later in Settings."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Продолжите без авторизации. Войти можно позже в Настройках."
-          }
-        }
-      }
-    },
+    
     "auth.token.missing" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No authorization token."
+            "value" : "Device identifier missing."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Нет токена авторизации."
+            "value" : "Отсутствует идентификатор устройства."
           }
         }
       }
@@ -3218,38 +3185,7 @@
         }
       }
     },
-    "settings.account.signin" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Sign in with Apple"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Войти с Apple"
-          }
-        }
-      }
-    },
-    "settings.account.signout.apple" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Sign out of Apple account"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Выйти из аккаунта Apple"
-          }
-        }
-      }
-    },
+    
     "settings.language" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3284,23 +3220,6 @@
         }
       }
     },
-    "settings.signout" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign out of Apple account"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Выйти из аккаунта Apple"
-          }
-        }
-      }
-    },
     "settings.title" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3318,40 +3237,7 @@
         }
       }
     },
-    "sign_in.button.apple" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign in with Apple"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Войти через Apple"
-          }
-        }
-      }
-    },
-    "sign_in.prompt" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Please sign in with Apple"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Пожалуйста, войдите через Apple"
-          }
-        }
-      }
-    },
+    
     "signout.confirm.ok" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3386,40 +3272,7 @@
         }
       }
     },
-    "store.auth.required.message" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "To use the Store, sign in with Apple."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Чтобы пользоваться Магазином, войдите через Apple."
-          }
-        }
-      }
-    },
-    "store.auth.required.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign-in required"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Войдите, чтобы открыть Магазин"
-          }
-        }
-      }
-    },
+    
     "store.title" : {
       "extractionState" : "manual",
       "localizations" : {

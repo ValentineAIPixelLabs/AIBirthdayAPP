@@ -8,7 +8,7 @@ final class ChatGPTService {
 
     // MARK: - Генерация поздравления
 
-    // Новый синтаксис: без appleId параметра, токен берём из AppleSignInManager
+    // Новый синтаксис: backend будет работать с appAccountToken от DeviceAccountManager
     func generateGreeting(for contact: Contact, completion: @escaping (Result<String, Error>) -> Void) {
         // 1. Формируем prompt как раньше
         var ageString = ""
@@ -45,10 +45,11 @@ final class ChatGPTService {
         let prompt = promptLines.joined(separator: "\n")
         
         // 2. Готовим запрос к своему серверу
-        // Читаем токен на главном акторе (AppleSignInManager помечен @MainActor)
+        // Читаем токен на главном акторе (DeviceAccountManager помечен @MainActor)
         DispatchQueue.main.async {
-            guard let token = AppleSignInManager.shared.currentJWTToken else {
-                completion(.failure(NSError(domain: "Нет токена авторизации", code: -401)))
+            let token = DeviceAccountManager.shared.appAccountToken()
+            guard !token.isEmpty else {
+                completion(.failure(self.missingTokenError()))
                 return
             }
             guard let url = URL(string: "https://aibirthday-backend.up.railway.app/api/generate") else {
@@ -58,7 +59,7 @@ final class ChatGPTService {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            // Не передаём apple_id в body
+            // В теле запроса только данные генерации; идентификатор пользователя уходит в заголовке
             let body: [String: Any] = [
                 "prompt": prompt,
                 "type": "birthday"
@@ -69,8 +70,8 @@ final class ChatGPTService {
                 completion(.failure(error))
                 return
             }
-            // Добавляем Authorization: Bearer <токен>
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            // Передаём устойчивый идентификатор устройства в заголовке
+            request.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
             let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 if let error = error {
                     DispatchQueue.main.async { completion(.failure(error)) }
@@ -100,7 +101,7 @@ final class ChatGPTService {
     }
     
     // MARK: - Генерация открытки (prompt формируется во View!)
-    // Новый синтаксис: без appleId параметра, токен берём из AppleSignInManager
+    // Новый синтаксис: backend будет работать с appAccountToken от DeviceAccountManager
     func generateCard(for contact: Contact, prompt: String, quality: String, referenceImage: UIImage? = nil, size: String, completion: @escaping () -> Void) {
         let finalPrompt = prompt
         print("🧠 Final image prompt: \n\(finalPrompt)")
@@ -148,9 +149,16 @@ final class ChatGPTService {
         case holiday(UUID)
     }
 
+    private func missingTokenError() -> NSError {
+        NSError(domain: "DeviceAccountToken", code: -401, userInfo: [
+            NSLocalizedDescriptionKey: String(localized: "auth.token.missing")
+        ])
+    }
+
     private func requestImageGeneration(prompt: String, target: SaveTarget, quality: String?, referenceImageData: Data? = nil, size: String?, completion: @escaping () -> Void) {
         DispatchQueue.main.async {
-            guard let token = AppleSignInManager.shared.currentJWTToken else {
+            let token = DeviceAccountManager.shared.appAccountToken()
+            guard !token.isEmpty else {
                 showAlert(
                     title: String(localized: "common.error"),
                     message: String(localized: "auth.token.missing")
@@ -165,7 +173,7 @@ final class ChatGPTService {
 
             let boundary = "Boundary-\(UUID().uuidString)"
             request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
 
             var body = Data()
             body.append("--\(boundary)\r\n".data(using: .utf8)!)
@@ -274,8 +282,9 @@ final class ChatGPTService {
 
         // Авторизация через наш бэкенд
         DispatchQueue.main.async {
-            guard let token = AppleSignInManager.shared.currentJWTToken else {
-                completion(.failure(NSError(domain: "Нет токена авторизации", code: -401)))
+            let token = DeviceAccountManager.shared.appAccountToken()
+            guard !token.isEmpty else {
+                completion(.failure(self.missingTokenError()))
                 return
             }
             guard let url = URL(string: "https://aibirthday-backend.up.railway.app/api/generate") else {
@@ -286,7 +295,7 @@ final class ChatGPTService {
             request.timeoutInterval = 240
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
             let body: [String: Any] = [
                 "prompt": prompt,
                 "type": "holiday"
@@ -350,8 +359,9 @@ final class ChatGPTService {
         let prompt = promptLines.joined(separator: "\n")
 
         DispatchQueue.main.async {
-            guard let token = AppleSignInManager.shared.currentJWTToken else {
-                completion(.failure(NSError(domain: "Нет токена авторизации", code: -401)))
+            let token = DeviceAccountManager.shared.appAccountToken()
+            guard !token.isEmpty else {
+                completion(.failure(self.missingTokenError()))
                 return
             }
             guard let url = URL(string: "https://aibirthday-backend.up.railway.app/api/generate") else {
@@ -362,7 +372,7 @@ final class ChatGPTService {
             request.timeoutInterval = 240
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
             let body: [String: Any] = [
                 "prompt": prompt,
                 "type": "holiday_personal"
@@ -414,10 +424,11 @@ final class ChatGPTService {
         if let info = contact.additionalInfo, !info.isEmpty { infoLines.append("Additional Info: \(info)") }
         let infoBlock = infoLines.joined(separator: "\n")
 
-        // Получаем токен авторизации через AppleSignInManager
+        // Получаем токен авторизации через DeviceAccountManager
         DispatchQueue.main.async {
-            guard let token = AppleSignInManager.shared.currentJWTToken else {
-                completion(.failure(NSError(domain: "Нет токена авторизации", code: -401)))
+            let token = DeviceAccountManager.shared.appAccountToken()
+            guard !token.isEmpty else {
+                completion(.failure(self.missingTokenError()))
                 return
             }
             guard let url = URL(string: "https://aibirthday-backend.up.railway.app/api/generate_card_prompt") else {
@@ -427,7 +438,7 @@ final class ChatGPTService {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            // Не передаём apple_id в body
+            // В теле запроса только данные генерации; идентификатор пользователя уходит в заголовке
             let body: [String: Any] = [
                 "info_block": infoBlock
             ]
@@ -437,8 +448,8 @@ final class ChatGPTService {
                 completion(.failure(error))
                 return
             }
-            // Добавляем Authorization: Bearer <токен>
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            // Передаём устойчивый идентификатор устройства в заголовке
+            request.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
             let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 if let error = error { DispatchQueue.main.async { completion(.failure(error)) }; return }
                 guard let data = data else {
@@ -474,4 +485,3 @@ private func showAlert(title: String, message: String) {
         root.present(alert, animated: true)
     }
 }
-

@@ -239,7 +239,7 @@ struct ActivityViewController: UIViewControllerRepresentable {
             if selectedMode == "text" {
                 VStack(spacing: 0) {
                     Button(action: {
-                        // JWT авторизация: appleId больше не нужен.
+                        // Вход больше не требуется: используем устойчивый идентификатор устройства.
                         loadingType = .text
                         isLoading = true
                         ChatGPTService.shared.generateGreeting(for: contact) { result in
@@ -486,7 +486,7 @@ struct ActivityViewController: UIViewControllerRepresentable {
         showShareSheet = false
         showCardShareSheet = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        // JWT авторизация: appleId больше не нужен.
+        // Вход больше не требуется: используем устойчивый идентификатор устройства.
 
         loadingType = .image
         isLoading = true
@@ -558,7 +558,7 @@ struct ActivityViewController: UIViewControllerRepresentable {
     }
 
     private func generateCreativePrompt() {
-        // JWT авторизация: appleId больше не нужен.
+        // Не требуется вход: используем устойчивый идентификатор устройства.
         loadingType = .prompt
         isLoading = true
         ChatGPTService.shared.generateCreativePrompt(for: contact) { result in

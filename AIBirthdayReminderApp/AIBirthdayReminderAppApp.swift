@@ -2,14 +2,6 @@ import SwiftUI
 import UIKit
 import CoreData
 import CloudKit
-import AuthenticationServices
-import Combine
-
-// Helper: consider user "authorized" if signed in with Apple OR explicitly chose to defer sign-in
-@MainActor fileprivate func isUserAuthorized() -> Bool {
-    AppleSignInManager.shared.currentAppleId != nil
-    || UserDefaults.standard.bool(forKey: "auth.deferredSignIn")
-}
 
 @main
 struct AIBirthdayReminderAppApp: App {
@@ -93,7 +85,7 @@ struct AIBirthdayReminderAppApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            AppTabView()
                 .environmentObject(holidaysVM)
                 .environmentObject(store)
                 .environmentObject(lang)
@@ -104,80 +96,6 @@ struct AIBirthdayReminderAppApp: App {
                     await store.loadProducts()
                 }
         }
-    }
-}
-
-@MainActor struct RootView: View {
-    @State private var isSignedIn = isUserAuthorized()
-
-    var body: some View {
-        Group {
-            if isSignedIn {
-                AppTabView()
-            } else {
-                SignInView(isSignedIn: $isSignedIn)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
-            .receive(on: DispatchQueue.main)) { _ in
-            isSignedIn = isUserAuthorized()
-        }
-    }
-}
-
-@MainActor struct SignInView: View {
-    @Binding var isSignedIn: Bool
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Text("sign_in.prompt")
-                .font(.title2)
-
-            AppleIDButton {
-                AppleSignInManager.shared.startSignIn()
-            }
-            .frame(height: 44)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-
-            Button {
-                // User chose to defer sign-in; remember and proceed to the app
-                UserDefaults.standard.set(true, forKey: "auth.deferredSignIn")
-                isSignedIn = true
-            } label: {
-                Text("auth.continue.without.signin")
-                    .font(.body)
-                    .foregroundStyle(.tint)
-            }
-            .buttonStyle(.plain)
-            .accessibilityAddTraits(.isLink)
-            .accessibilityHint(Text("auth.guest.hint"))
-        }
-        .padding()
-        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
-            .receive(on: DispatchQueue.main)) { _ in
-            isSignedIn = isUserAuthorized()
-        }
-    }
-}
-
-private struct AppleIDButton: UIViewRepresentable {
-    var action: () -> Void
-
-    func makeUIView(context: Context) -> ASAuthorizationAppleIDButton {
-        let button = ASAuthorizationAppleIDButton(type: .signIn, style: .black)
-        button.cornerRadius = 10
-        button.addTarget(context.coordinator, action: #selector(Coordinator.didTap), for: .touchUpInside)
-        return button
-    }
-
-    func updateUIView(_ uiView: ASAuthorizationAppleIDButton, context: Context) {}
-
-    func makeCoordinator() -> Coordinator { Coordinator(action: action) }
-
-    final class Coordinator: NSObject {
-        let action: () -> Void
-        init(action: @escaping () -> Void) { self.action = action }
-        @objc func didTap() { action() }
     }
 }
 
