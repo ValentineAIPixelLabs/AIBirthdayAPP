@@ -19,6 +19,7 @@ final class StoreKitManager: ObservableObject {
     @Published var nextSubscriptionResetAt: Date? = nil
     @Published var autoRenewStatus: Bool? = nil
     @Published var autoRenewProductId: String? = nil
+    @Published var consumptionReportingOptIn: Bool = false
 
     // Listener task for StoreKit transaction updates
     private var transactionUpdatesTask: Task<Void, Never>?
@@ -194,6 +195,11 @@ final class StoreKitManager: ObservableObject {
         let idempotent: Bool?
     }
 
+    private struct ConsentResponse: Decodable {
+        let success: Bool?
+        let consented: Bool
+    }
+
     private struct SubscriptionStatus: Decodable {
         let active: Bool?
         let product_id: String?
@@ -211,6 +217,7 @@ final class StoreKitManager: ObservableObject {
         let pending_allowance: Int?
         let pending_effective_at: String?
         let revocation_at: String?
+        let consumption_reporting_opt_in: Bool?
     }
 
     private struct SubscriptionConfigResponse: Decodable {
@@ -237,6 +244,9 @@ final class StoreKitManager: ObservableObject {
         pendingSubscriptionEffectiveDate = parseISODate(status.pending_effective_at)
         autoRenewStatus = status.auto_renew_status
         autoRenewProductId = status.auto_renew_product_id
+        if let consent = status.consumption_reporting_opt_in {
+            consumptionReportingOptIn = consent
+        }
     }
 
     private func syncSubscriptionToServer(transaction: Transaction?, productId: String, period: String, expiresAt: Date, isActive: Bool) async {
@@ -309,6 +319,7 @@ final class StoreKitManager: ObservableObject {
                 nextSubscriptionResetAt = nil
                 autoRenewStatus = nil
                 autoRenewProductId = nil
+                consumptionReportingOptIn = false
             } else if let http = response as? HTTPURLResponse {
                 let body = String(data: data, encoding: .utf8) ?? "<non-utf8>"
                 logger.error("fetchSubscriptionStatus unexpected status=\(http.statusCode) body=\(body, privacy: .public)")
@@ -345,6 +356,35 @@ final class StoreKitManager: ObservableObject {
             }
         } catch {
             logger.error("fetchServerTokens error: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func updateConsumptionReportingConsent(_ consented: Bool) async {
+        guard let token = requireAppAccountToken() else {
+            logger.debug("updateConsumptionReportingConsent skipped — no device token")
+            return
+        }
+        var req = URLRequest(url: baseURL.appendingPathComponent("/api/consent/consumption"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["consented": consented])
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
+                if let decoded = try? JSONDecoder().decode(ConsentResponse.self, from: data) {
+                    self.consumptionReportingOptIn = decoded.consented
+                } else {
+                    self.consumptionReportingOptIn = consented
+                }
+                logger.log("updateConsumptionReportingConsent status=\(http.statusCode)")
+            } else if let http = response as? HTTPURLResponse {
+                let body = String(data: data, encoding: .utf8) ?? "<non-utf8>"
+                logger.error("updateConsumptionReportingConsent unexpected status=\(http.statusCode) body=\(body, privacy: .public)")
+            }
+        } catch {
+            logger.error("updateConsumptionReportingConsent error: \(error.localizedDescription, privacy: .public)")
         }
     }
 
