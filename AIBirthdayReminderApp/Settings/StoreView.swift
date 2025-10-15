@@ -42,9 +42,9 @@ private struct PaywallScreen: View {
     private var activeProductID: String? { store.activeSubscriptionProductId }
     private var pendingProductID: String? { store.pendingSubscriptionProductId }
     private let previewCards: [PreviewCardModel] = [
-        .init(title: " ", subtitle: " ", gradient: [Color(hex: 0xFF9A9E), Color(hex: 0xFAD0C4)], imageName: "PaywallPreviewCard"),
-        .init(title: " ", subtitle: " ", gradient: [Color(hex: 0xA18CD1), Color(hex: 0xFBC2EB)], imageName: "PaywallPreviewCard"),
-        .init(title: " ", subtitle: " ", gradient: [Color(hex: 0x84FAB0), Color(hex: 0x8FD3F4)], imageName: "PaywallPreviewCard")
+        .init(title: " ", subtitle: " ", gradient: [], imageName: "Card2"),
+        .init(title: " ", subtitle: " ", gradient: [], imageName: "Card1"),
+        .init(title: " ", subtitle: " ", gradient: [], imageName: "Card3")
     ]
     private var isLegacyOS: Bool {
         ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 26
@@ -62,7 +62,7 @@ private struct PaywallScreen: View {
                         plansSection(isCompact: isCompact)
                         footerSection(isCompact: isCompact)
                     }
-                    .padding(.horizontal, CardStyle.listHorizontalPadding)
+                    .padding(.horizontal, isCompact ? CardStyle.listHorizontalPadding : 6)
                     .padding(.top, isCompact ? 18 : 32)
                     .padding(.bottom, isCompact ? 14 : 44)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -88,10 +88,10 @@ private struct PaywallScreen: View {
     // MARK: Sections
 
     private func marketingCard(isCompact: Bool) -> some View {
-        VStack(spacing: isCompact ? 8 : 16) {
+        VStack(spacing: isCompact ? 8 : 18) {
             PreviewDeckView(cards: previewCards, isCompact: isCompact)
-                .frame(height: isCompact ? 180 : 230)
-                .padding(.top, isCompact ? -8 : -8)
+                .frame(height: isCompact ? 270 : 364)
+                .padding(.top, isCompact ? -8 : 4)
 
             VStack(spacing: isCompact ? 2 : 6) {
                 Text("Премиум-доступ")
@@ -180,12 +180,11 @@ private struct PaywallScreen: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, isCompact ? 8 : 12)
+                    .padding(.vertical, isCompact ? 8 : 14)
                 }
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.roundedRectangle(radius: isLegacyOS ? 24 : (isCompact ? 18 : 12)))
                 .tint(Color.accentPrimary)
-                .controlSize(isCompact ? .small : .large)
                 .padding(.top, isCompact ? 4 : 8)
                 .disabled(btnDisabled)
             }
@@ -525,23 +524,23 @@ private struct PreviewCardView: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(Color.clear)
                 .overlay {
                     if let imageName = model.imageName {
                         Image(imageName)
                             .resizable()
                             .scaledToFill()
-                            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     } else {
                         LinearGradient(colors: model.gradient,
                                        startPoint: .topLeading,
                                        endPoint: .bottomTrailing)
-                            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     }
                 }
                 .overlay(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .stroke(Color.white.opacity(0.24), lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.25), radius: 18, y: 16)
@@ -577,17 +576,16 @@ private struct PreviewDeckView: View {
     var body: some View {
         GeometryReader { proxy in
             let containerWidth = proxy.size.width
-            let baseWidth = min(containerWidth * (isCompact ? 0.38 : 0.5), isCompact ? 160 : 200)
-            let cardOffset = baseWidth * (isCompact ? 0.72 : 0.82)
+            let baseWidth = min(containerWidth * (isCompact ? 0.57 : 0.92), isCompact ? 240 : 300)
+            let cardOffset = baseWidth * (isCompact ? 0.72 : 0.60)
 
             ZStack {
                 if let left = cards.first {
                     PreviewCardView(model: left)
                         .frame(width: baseWidth)
-                        .rotationEffect(.degrees(-14))
-                        .scaleEffect(isCompact ? 0.85 : 0.9)
-                        .offset(x: -cardOffset, y: isCompact ? 10 : 18)
-                        .opacity(0.64)
+                        .rotationEffect(.degrees(-10))
+                        .offset(x: -cardOffset, y: isCompact ? 10 : 28)
+                        .opacity(0.56)
                         .zIndex(0)
                 }
 
@@ -601,14 +599,13 @@ private struct PreviewDeckView: View {
                 if cards.count > 2 {
                     PreviewCardView(model: cards[2])
                         .frame(width: baseWidth)
-                        .rotationEffect(.degrees(14))
-                        .scaleEffect(isCompact ? 0.85 : 0.9)
-                        .offset(x: cardOffset, y: isCompact ? 10 : 18)
-                        .opacity(0.64)
+                        .rotationEffect(.degrees(10))
+                        .offset(x: cardOffset, y: isCompact ? 10 : 28)
+                        .opacity(0.56)
                         .zIndex(0)
                 }
             }
-            .frame(width: containerWidth, height: baseWidth * (isCompact ? 1.1 : 1.45), alignment: .center)
+            .frame(width: containerWidth, height: baseWidth * (isCompact ? 1.1 : 1.2), alignment: .center)
         }
         .allowsHitTesting(false)
     }
