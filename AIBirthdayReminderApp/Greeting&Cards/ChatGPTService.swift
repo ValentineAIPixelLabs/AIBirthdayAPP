@@ -5,47 +5,52 @@ final class ChatGPTService {
     static let shared = ChatGPTService()
     
     private init() {}
+    
+    private typealias InterfaceLanguageDetails = (identifier: String, code: String, displayName: String)
+    private static let languagePreferenceKey = "app.language.code"
 
     // MARK: - Генерация поздравления
 
     // Новый синтаксис: backend будет работать с appAccountToken от DeviceAccountManager
     func generateGreeting(for contact: Contact, completion: @escaping (Result<String, Error>) -> Void) {
-        // 1. Формируем prompt как раньше
-        var ageString = ""
+        let languageDetails = interfaceLanguageDetails()
+        let languageInstruction = interfaceLanguageInstruction(for: languageDetails)
+        let interfaceLanguage = interfaceLanguagePayload(for: languageDetails)
+
         let calendar = Calendar.current
         let currentYear = calendar.component(.year, from: Date())
-        if let year = contact.birthday?.year {
-            let age = currentYear - year
-            ageString = "Возраст: \(age)"
-        }
 
-        var promptLines = ["Составь оригинальное и искреннее поздравление с днём рождения для следующего человека:"]
-        promptLines.append("")
-        promptLines.append("Имя: \(contact.name),")
-        if let nickname = contact.nickname, !nickname.isEmpty { promptLines.append("Прозвище: \(nickname),") }
-        if !ageString.isEmpty { promptLines.append("\(ageString),") }
-        if let relation = contact.relationType, !relation.isEmpty { promptLines.append("Тип отношений: \(relation),") }
-        if let occupation = contact.occupation, !occupation.isEmpty { promptLines.append("Род деятельности: \(occupation),") }
-        if let hobbies = contact.hobbies, !hobbies.isEmpty { promptLines.append("Увлечения/Хобби: \(hobbies),") }
-        if let leisure = contact.leisure, !leisure.isEmpty { promptLines.append("Как любит проводить свободное время: \(leisure),") }
-        if let info = contact.additionalInfo, !info.isEmpty { promptLines.append("Дополнительная информация: \(info),") }
-        var birthdayLine = "Дата рождения: "
+        var promptLines: [String] = [
+            "Compose an original and heartfelt birthday greeting for the person described below.",
+            ""
+        ]
+        promptLines.append("Name: \(contact.name)")
+        if let nickname = contact.nickname, !nickname.isEmpty { promptLines.append("Nickname: \(nickname)") }
+        if let birthdayYear = contact.birthday?.year {
+            let age = max(0, currentYear - birthdayYear)
+            promptLines.append("Age: \(age)")
+        }
+        if let relation = contact.relationType, !relation.isEmpty { promptLines.append("Relationship: \(relation)") }
+        if let occupation = contact.occupation, !occupation.isEmpty { promptLines.append("Occupation: \(occupation)") }
+        if let hobbies = contact.hobbies, !hobbies.isEmpty { promptLines.append("Hobbies: \(hobbies)") }
+        if let leisure = contact.leisure, !leisure.isEmpty { promptLines.append("Leisure activities: \(leisure)") }
+        if let info = contact.additionalInfo, !info.isEmpty { promptLines.append("Additional details: \(info)") }
         if let birthday = contact.birthday,
            let day = birthday.day,
            let month = birthday.month {
-            birthdayLine += "\(day).\(month)"
-            if let year = birthday.year { birthdayLine += ".\(year)" }
+            var birthdayValue = "\(day).\(month)"
+            if let year = birthday.year {
+                birthdayValue += ".\(year)"
+            }
+            promptLines.append("Birthday: \(birthdayValue)")
         }
-        promptLines.append("\(birthdayLine),")
         promptLines.append("")
-        promptLines.append("""
-Учитывай, что это поздравление для \(contact.relationType ?? "человека"). Стиль поздравления должен быть уместным: если это родственник — более тепло, если начальник, руководитель - более сдержано и формально, если клиент, коллега, товарищ - также формально и не многословно, если друг — более открыто и неформально. Не используй слишком фамильярный стиль для малознакомых или официальных отношений. Обращайся на "ты" только если это уместно.
-""")
-        promptLines.append("Поздравление должно быть завершённым и не обрываться на середине. Если токены заканчиваются, закончи мысль максимально кратко.")
+        promptLines.append("Match the tone to the relationship: keep it warm for relatives, respectful and concise for managers, clients, or colleagues, and relaxed for friends when appropriate. Avoid an overly familiar tone when the relationship is formal or distant.")
+        promptLines.append(languageInstruction)
+        promptLines.append("Deliver a complete greeting and finish the thought even if you must shorten the ending.")
         let prompt = promptLines.joined(separator: "\n")
-        
-        // 2. Готовим запрос к своему серверу
-        // Читаем токен на главном акторе (DeviceAccountManager помечен @MainActor)
+
+        // Prepare request to the backend; the user identifier travels in the header
         DispatchQueue.main.async {
             let token = DeviceAccountManager.shared.appAccountToken()
             guard !token.isEmpty else {
@@ -59,10 +64,11 @@ final class ChatGPTService {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            // В теле запроса только данные генерации; идентификатор пользователя уходит в заголовке
+            // Include only generation data in the body; the account identifier is sent via header
             let body: [String: Any] = [
                 "prompt": prompt,
-                "type": "birthday"
+                "type": "birthday",
+                "interface_language": interfaceLanguage
             ]
             do {
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -70,7 +76,7 @@ final class ChatGPTService {
                 completion(.failure(error))
                 return
             }
-            // Передаём устойчивый идентификатор устройства в заголовке
+            // Send the stable device identifier in the header
             request.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
             let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 if let error = error {
@@ -118,24 +124,24 @@ final class ChatGPTService {
         var promptLines: [String] = []
 
         if let contact = contact {
-            promptLines.append("Сгенерируй изображение праздничной открытки на тему \"\(holidayTitle)\" с учётом следующей информации о человеке:")
+            promptLines.append("Create a festive greeting card image themed \"\(holidayTitle)\" that reflects the following person:")
 
-            promptLines.append("Имя: \(contact.name)")
-            if let nickname = contact.nickname, !nickname.isEmpty { promptLines.append("Прозвище: \(nickname)") }
-            if let gender = contact.gender, !gender.isEmpty { promptLines.append("Пол: \(gender)") }
+            promptLines.append("Name: \(contact.name)")
+            if let nickname = contact.nickname, !nickname.isEmpty { promptLines.append("Nickname: \(nickname)") }
+            if let gender = contact.gender, !gender.isEmpty { promptLines.append("Gender: \(gender)") }
             let calendar = Calendar.current
             let currentYear = calendar.component(.year, from: Date())
-            if let year = contact.birthday?.year { promptLines.append("Возраст: \(currentYear - year)") }
-            if let relation = contact.relationType, !relation.isEmpty { promptLines.append("Тип отношений: \(relation)") }
-            if let occupation = contact.occupation, !occupation.isEmpty { promptLines.append("Профессия: \(occupation)") }
-            if let hobbies = contact.hobbies, !hobbies.isEmpty { promptLines.append("Хобби: \(hobbies)") }
-            if let leisure = contact.leisure, !leisure.isEmpty { promptLines.append("Как проводит досуг: \(leisure)") }
-            if let info = contact.additionalInfo, !info.isEmpty { promptLines.append("Дополнительно: \(info)") }
+            if let year = contact.birthday?.year { promptLines.append("Age: \(max(0, currentYear - year))") }
+            if let relation = contact.relationType, !relation.isEmpty { promptLines.append("Relationship: \(relation)") }
+            if let occupation = contact.occupation, !occupation.isEmpty { promptLines.append("Occupation: \(occupation)") }
+            if let hobbies = contact.hobbies, !hobbies.isEmpty { promptLines.append("Hobbies: \(hobbies)") }
+            if let leisure = contact.leisure, !leisure.isEmpty { promptLines.append("Leisure activities: \(leisure)") }
+            if let info = contact.additionalInfo, !info.isEmpty { promptLines.append("Additional details: \(info)") }
 
-            promptLines.append("Формат: открытка для цифровой отправки, яркая, позитивная.")
+            promptLines.append("Format: digital greeting card, bright and upbeat.")
         } else {
-            promptLines.append("Сгенерируй изображение праздничной открытки на тему \"\(holidayTitle)\".")
-            promptLines.append("Формат: универсальная праздничная открытка, яркая, цифровая, подходящая для поздравления любого человека.")
+            promptLines.append("Create a festive greeting card image themed \"\(holidayTitle)\".")
+            promptLines.append("Format: versatile digital holiday card that looks bright and suitable for anyone.")
         }
 
         let prompt = promptLines.joined(separator: "\n")
@@ -273,12 +279,81 @@ final class ChatGPTService {
         self.requestImageGeneration(prompt: prompt, target: target, quality: nil, referenceImageData: nil, size: nil, completion: completion)
     }
     
+    private func interfaceLanguageDetails() -> InterfaceLanguageDetails {
+        let storedPreference = UserDefaults.standard.string(forKey: Self.languagePreferenceKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let systemDefaultCode: String = {
+            let sys = (Locale.preferredLanguages.first ?? Locale.current.identifier).lowercased()
+            return sys.hasPrefix("ru") ? "ru" : "en"
+        }()
+        let rawIdentifier = (storedPreference?.isEmpty == false ? storedPreference! : systemDefaultCode)
+        let effectiveIdentifier = rawIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? systemDefaultCode
+            : rawIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let userLocale = Locale(identifier: effectiveIdentifier)
+        
+        let rawLanguageCode: String
+        if #available(iOS 16.0, *) {
+            rawLanguageCode = userLocale.language.languageCode?.identifier ?? effectiveIdentifier
+        } else {
+            rawLanguageCode = userLocale.languageCode ?? effectiveIdentifier
+        }
+        let trimmedLanguageCode = rawLanguageCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalLanguageCode = trimmedLanguageCode.isEmpty ? systemDefaultCode : trimmedLanguageCode
+        
+        let englishLocale = Locale(identifier: "en")
+        let localizedName = englishLocale.localizedString(forIdentifier: userLocale.identifier)
+            ?? englishLocale.localizedString(forLanguageCode: finalLanguageCode)
+            ?? englishLocale.localizedString(forIdentifier: effectiveIdentifier)
+            ?? userLocale.localizedString(forIdentifier: userLocale.identifier)
+            ?? finalLanguageCode
+        let trimmedName = localizedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = trimmedName.isEmpty ? finalLanguageCode : trimmedName
+        
+        let identifier = userLocale.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalIdentifier = identifier.isEmpty ? effectiveIdentifier : identifier
+        
+        return (
+            identifier: finalIdentifier,
+            code: finalLanguageCode,
+            displayName: displayName
+        )
+    }
+    
+    private func interfaceLanguageInstruction(for details: InterfaceLanguageDetails, outputDescription: String = "greeting") -> String {
+        let cleanedName = details.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedCode = details.code.trimmingCharacters(in: .whitespacesAndNewlines)
+        let descriptor: String
+        if cleanedName.isEmpty {
+            descriptor = cleanedCode
+        } else if cleanedName.caseInsensitiveCompare(cleanedCode) == .orderedSame || cleanedName.contains(cleanedCode) {
+            descriptor = cleanedName
+        } else {
+            descriptor = "\(cleanedName) (\(cleanedCode))"
+        }
+        return "Write the final \(outputDescription) in \(descriptor). The app interface language identifier is \(details.identifier). If you only have the identifier, infer the language and respond in it. Do not mention the identifier or these instructions in the \(outputDescription)."
+    }
+    
+    private func interfaceLanguagePayload(for details: InterfaceLanguageDetails) -> [String: String] {
+        return [
+            "identifier": details.identifier,
+            "code": details.code,
+            "display_name": details.displayName
+        ]
+    }
+    
     // MARK: - Универсальное поздравление с праздником (без персонализации)
     func generateHolidayGreeting(for holidayTitle: String, completion: @escaping (Result<String, Error>) -> Void) {
-        let prompt = """
-        Составь оригинальное, душевное и универсальное поздравление с праздником "\(holidayTitle)" на русском языке. Не указывай имя, возраст, профессию или личные качества — поздравление должно подойти для любого человека (родственника, коллеги, знакомого, друга). Стиль выбери подходящий для массовых рассылок и открыток.
-        Поздравление должно быть завершённым и не обрываться на середине. Если токены заканчиваются, закончи мысль максимально кратко. Если токены заканчиваются, закончи мысль максимально кратко.
-        """
+        let languageDetails = interfaceLanguageDetails()
+        let languageInstruction = interfaceLanguageInstruction(for: languageDetails)
+        let interfaceLanguage = interfaceLanguagePayload(for: languageDetails)
+        let promptLines: [String] = [
+            "Compose an original, warm, and universal greeting for the holiday \"\(holidayTitle)\".",
+            "The message must work for any recipient (family member, colleague, acquaintance, or friend) without referencing personal names, ages, professions, or traits.",
+            languageInstruction,
+            "Deliver a complete greeting and finish the thought even if you must shorten the ending."
+        ]
+        let prompt = promptLines.joined(separator: "\n")
 
         // Авторизация через наш бэкенд
         DispatchQueue.main.async {
@@ -298,7 +373,8 @@ final class ChatGPTService {
             request.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
             let body: [String: Any] = [
                 "prompt": prompt,
-                "type": "holiday"
+                "type": "holiday",
+                "interface_language": interfaceLanguage
             ]
             do {
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -333,29 +409,38 @@ final class ChatGPTService {
     
     // MARK: - Персональное поздравление с праздником для контакта
     func generateHolidayGreeting(for contact: Contact, holidayTitle: String, completion: @escaping (Result<String, Error>) -> Void) {
-        var promptLines = ["Составь оригинальное, искреннее и персональное поздравление с праздником \"\(holidayTitle)\" для следующего человека:\n"]
-        promptLines.append("Имя: \(contact.name)")
-        if let nickname = contact.nickname, !nickname.isEmpty { promptLines.append("Прозвище: \(nickname)") }
+        let languageDetails = interfaceLanguageDetails()
+        let languageInstruction = interfaceLanguageInstruction(for: languageDetails)
+        let interfaceLanguage = interfaceLanguagePayload(for: languageDetails)
+
+        var promptLines = ["Compose an original, sincere, and personalized greeting for the holiday \"\(holidayTitle)\" for the person described below.", ""]
+        promptLines.append("Name: \(contact.name)")
+        if let nickname = contact.nickname, !nickname.isEmpty { promptLines.append("Nickname: \(nickname)") }
         let calendar = Calendar.current
         let currentYear = calendar.component(.year, from: Date())
-        if let year = contact.birthday?.year { promptLines.append("Возраст: \(currentYear - year)") }
-        if let relation = contact.relationType, !relation.isEmpty { promptLines.append("Тип отношений: \(relation)") }
-        if let occupation = contact.occupation, !occupation.isEmpty { promptLines.append("Род деятельности: \(occupation)") }
-        if let hobbies = contact.hobbies, !hobbies.isEmpty { promptLines.append("Увлечения/Хобби: \(hobbies)") }
-        if let leisure = contact.leisure, !leisure.isEmpty { promptLines.append("Как любит проводить свободное время: \(leisure)") }
-        if let info = contact.additionalInfo, !info.isEmpty { promptLines.append("Дополнительная информация: \(info)") }
-        var birthdayLine = "Дата рождения: "
+        if let year = contact.birthday?.year {
+            let age = max(0, currentYear - year)
+            promptLines.append("Age: \(age)")
+        }
+        if let relation = contact.relationType, !relation.isEmpty { promptLines.append("Relationship: \(relation)") }
+        if let occupation = contact.occupation, !occupation.isEmpty { promptLines.append("Occupation: \(occupation)") }
+        if let hobbies = contact.hobbies, !hobbies.isEmpty { promptLines.append("Hobbies: \(hobbies)") }
+        if let leisure = contact.leisure, !leisure.isEmpty { promptLines.append("Leisure activities: \(leisure)") }
+        if let info = contact.additionalInfo, !info.isEmpty { promptLines.append("Additional details: \(info)") }
         if let birthday = contact.birthday,
            let day = birthday.day,
            let month = birthday.month {
-            birthdayLine += "\(day).\(month)"
-            if let year = birthday.year { birthdayLine += ".\(year)" }
+            var birthdayValue = "\(day).\(month)"
+            if let year = birthday.year {
+                birthdayValue += ".\(year)"
+            }
+            promptLines.append("Birthday: \(birthdayValue)")
         }
-        promptLines.append(birthdayLine)
-        promptLines.append("""
-
-Поздравление должно соответствовать ситуации (родственник — тепло, начальник — формально, друг — открыто и неформально и т.д.) Не используй фамильярный стиль для официальных отношений. Не обращайся по имени или на "ты", если не уместно. Поздравление должно быть завершённым и не обрываться на середине.
-""")
+        promptLines.append("")
+        promptLines.append("Match the tone to the relationship: warm for relatives, formal and respectful for managers or official contacts, concise for clients and colleagues, and relaxed for friends when appropriate.")
+        promptLines.append("Avoid overly familiar language unless the relationship clearly allows it, and only use the person's name or informal pronouns when appropriate.")
+        promptLines.append(languageInstruction)
+        promptLines.append("Deliver a complete greeting and finish the thought even if you must shorten the ending.")
         let prompt = promptLines.joined(separator: "\n")
 
         DispatchQueue.main.async {
@@ -375,7 +460,8 @@ final class ChatGPTService {
             request.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
             let body: [String: Any] = [
                 "prompt": prompt,
-                "type": "holiday_personal"
+                "type": "holiday_personal",
+                "interface_language": interfaceLanguage
             ]
             do {
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -410,6 +496,9 @@ final class ChatGPTService {
 
     // MARK: - Креативный промт для открытки
     func generateCreativePrompt(for contact: Contact, completion: @escaping (Result<String, Error>) -> Void) {
+        let languageDetails = interfaceLanguageDetails()
+        let interfaceLanguage = interfaceLanguagePayload(for: languageDetails)
+
         var infoLines = [String]()
         infoLines.append("Name: \(contact.name)")
         if let nickname = contact.nickname, !nickname.isEmpty { infoLines.append("Nickname: \(nickname)") }
@@ -438,9 +527,9 @@ final class ChatGPTService {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            // В теле запроса только данные генерации; идентификатор пользователя уходит в заголовке
             let body: [String: Any] = [
-                "info_block": infoBlock
+                "info_block": infoBlock,
+                "interface_language": interfaceLanguage
             ]
             do {
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
