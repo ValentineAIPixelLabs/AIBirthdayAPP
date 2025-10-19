@@ -7,11 +7,7 @@ import ContactsUI
     @EnvironmentObject var holidaysVM: HolidaysViewModel
     @EnvironmentObject var lang: LanguageManager
     @State private var showNotificationSettings = false
-    @State private var isMultiPickerPresented = false
-    @State private var showImportAlert = false
-    @State private var importAlertMessage = ""
     @State private var showSubscription = false
-    @State private var showImportOptions = false
     @State private var showSupport = false
 
     var body: some View {
@@ -68,18 +64,6 @@ import ContactsUI
                     }
                     .pickerStyle(.segmented)
                 }
-
-                Section(header: Text("import.contacts.title")) {
-
-                    Button {
-                        showImportOptions = true
-                    } label: {
-                        Label("import.contacts.button", systemImage: "tray.and.arrow.down")
-                            .font(.headline)
-                            .padding(.vertical, 8)
-                    }
-                    .foregroundColor(.primary)
-                }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
@@ -91,52 +75,6 @@ import ContactsUI
                     NotificationSettingsView(settings: $vm.globalNotificationSettings)
                 }
             }
-            .sheet(isPresented: $isMultiPickerPresented) {
-                SystemContactsPickerViewMultiple { selectedContacts in
-                    DispatchQueue.main.async {
-                        // Разделяем на новых и дублирующих (гарантированно на главном потоке)
-                        let importedContacts = selectedContacts.map { convertCNContactToContact($0) }
-                        var added = 0
-                        var dups = 0
-                        for contact in importedContacts {
-                            if !vm.contacts.contains(where: { $0.name == contact.name && $0.surname == contact.surname && $0.birthday == contact.birthday }) {
-                                vm.addContact(contact)
-                                added += 1
-                            } else {
-                                dups += 1
-                            }
-                        }
-                        if importedContacts.count == 1 && added == 0 {
-                            importAlertMessage = String(localized: "import.result.single.already", locale: lang.locale)
-                        } else if added == 0 {
-                            importAlertMessage = String(localized: "import.result.none.already", locale: lang.locale)
-                        } else if dups > 0 {
-                            importAlertMessage = String.localizedStringWithFormat(
-                                String(localized: "import.result.mixed", locale: lang.locale),
-                                added, dups
-                            )
-                        } else {
-                            importAlertMessage = String.localizedStringWithFormat(
-                                String(localized: "import.result.count", locale: lang.locale),
-                                added
-                            )
-                        }
-                        showImportAlert = true
-                    }
-                }
-            }
-            .confirmationDialog("import.contacts.title", isPresented: $showImportOptions, titleVisibility: .visible) {
-                Button("import.contacts.pick.manually") {
-                    isMultiPickerPresented = true
-                }
-                Button("import.contacts.import.all") {
-                    importAllContacts()
-                }
-                Button("common.cancel", role: .cancel) { }
-            }
-            .alert(isPresented: $showImportAlert) {
-                Alert(title: Text("import.contacts.title"), message: Text(importAlertMessage), dismissButton: .default(Text("common.ok")))
-            }
             .fullScreenCover(isPresented: $showSubscription) {
                 PaywallView()
             }
@@ -146,76 +84,6 @@ import ContactsUI
         }
     }
 
-    func importAllContacts() {
-        CNContactStore().requestAccess(for: .contacts) { granted, error in
-            guard granted, error == nil else { return }
-            // Create the store inside the completion to avoid capturing a non-Sendable value in a @Sendable closure
-            let store = CNContactStore()
-            DispatchQueue.global(qos: .userInitiated).async {
-                let keys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactBirthdayKey, CNContactImageDataKey, CNContactNicknameKey, CNContactJobTitleKey] as [CNKeyDescriptor]
-                let request = CNContactFetchRequest(keysToFetch: keys)
-                var importedContacts: [Contact] = []
-                do {
-                    try store.enumerateContacts(with: request) { cnContact, _ in
-                        let contact = convertCNContactToContact(cnContact)
-                        importedContacts.append(contact)
-                    }
-                } catch {
-                    print("Ошибка импорта контактов: \(error)")
-                }
-                DispatchQueue.main.async {
-                    var added = 0
-                    for contact in importedContacts {
-                        if !vm.contacts.contains(where: { $0.name == contact.name && $0.surname == contact.surname && $0.birthday == contact.birthday }) {
-                            vm.addContact(contact)
-                            added += 1
-                        }
-                    }
-                    if added == 0 {
-                        importAlertMessage = String(localized: "import.result.none.already", locale: lang.locale)
-                    } else {
-                        importAlertMessage = String.localizedStringWithFormat(
-                            String(localized: "import.result.count", locale: lang.locale),
-                            added
-                        )
-                    }
-                    showImportAlert = true
-                }
-            }
-        }
-    }
-
-    nonisolated func convertCNContactToContact(_ cnContact: CNContact) -> Contact {
-        var birthdayValue: Birthday? = nil
-        if let bday = cnContact.birthday,
-           let day = bday.day, day > 0,
-           let month = bday.month, month > 0 {
-            birthdayValue = Birthday(
-                day: day,
-                month: month,
-                year: bday.year
-            )
-        } else {
-            birthdayValue = nil
-        }
-
-        return Contact(
-            id: UUID(),
-            name: cnContact.givenName,
-            surname: cnContact.familyName,
-            nickname: cnContact.nickname.isEmpty ? nil : cnContact.nickname,
-            relationType: nil,
-            gender: nil,
-            birthday: birthdayValue,
-            notificationSettings: .default,
-            imageData: cnContact.imageData,
-            emoji: nil,
-            occupation: cnContact.jobTitle.isEmpty ? nil : cnContact.jobTitle,
-            hobbies: nil,
-            leisure: nil,
-            additionalInfo: nil
-        )
-    }
 }
 
 struct SystemContactsPickerViewMultiple: UIViewControllerRepresentable {
