@@ -211,11 +211,11 @@ private struct PaywallScreen: View {
     private func footerSection(isCompact: Bool) -> some View {
         VStack(spacing: isCompact ? 6 : 12) {
             HStack(spacing: isCompact ? 10 : 16) {
-                Link("Условия", destination: URL(string: "https://aibirthday.app/terms")!)
+                Link("Условия", destination: URL(string: "https://cheerful-basement-6d2.notion.site/Terms-of-Use-for-AIBirthday-Reminder-291528ee143080b4bcc2cac7f3d8b4a0")!)
                 Divider()
                     .frame(height: 12)
                     .overlay(Color.white.opacity(0.5))
-                Link("Конфиденциальность", destination: URL(string: "https://aibirthday.app/privacy")!)
+                Link("Конфиденциальность", destination: URL(string: "https://cheerful-basement-6d2.notion.site/Privacy-Policy-for-AIBirthday-Reminder-291528ee1430805bbe44d155fcbf8fbc")!)
             }
             .font(adjustedFont(.footnote, weight: .semibold, delta: isCompact ? -2 : -1))
             .foregroundStyle(.white.opacity(0.78))
