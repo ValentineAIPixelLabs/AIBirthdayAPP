@@ -127,7 +127,7 @@ private struct HolidayContent: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundColor(.secondary)
                             .padding(.horizontal, CardStyle.listHorizontalPadding)
-                            .padding(.top, 8)
+                            .padding(.top, AppHeaderStyle.monthLabelTopPadding)
                             .padding(.bottom, 6)
                     }
                     .listRowBackground(Color.clear)
@@ -518,9 +518,9 @@ private struct HolidayContent: View {
                         .buttonStyle(FilterChipButtonStyle.Press())
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, AppHeaderStyle.filterChipsBottomPadding)
-                .padding(.top, 0)
+                .padding(.horizontal, AppHeaderStyle.horizontalPadding)
+                .padding(.bottom, AppHeaderStyle.listTopPaddingAfterChips)
+                .padding(.top, AppHeaderStyle.filterChipsTopPadding)
             }
         }
 
@@ -681,6 +681,4 @@ private struct HolidayCardView: View {
     }
     
 }
-
-
 

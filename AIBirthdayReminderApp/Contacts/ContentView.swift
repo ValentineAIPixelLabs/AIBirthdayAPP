@@ -151,6 +151,7 @@ struct ContentView: View {
 
     @StateObject var vm = ContactsViewModel()
     @StateObject var chipFilter = ChipRelationFilter(relations: [])
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass: UserInterfaceSizeClass?
     @State private var contactToDelete: Contact?
     @State private var showDeleteAlert = false
     @State private var highlightedContactID: UUID?
@@ -649,6 +650,7 @@ func convertCNContactToContact(_ cnContact: CNContact) -> Contact {
 private struct ContactsMainContent: View {
     @ObservedObject var vm: ContactsViewModel
     @ObservedObject var chipFilter: ChipRelationFilter
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass: UserInterfaceSizeClass?
     @Binding var contactToDelete: Contact?
     @Binding var showDeleteAlert: Bool
     @Binding var highlightedContactID: UUID?
@@ -793,11 +795,11 @@ private struct ContactsMainContent: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundColor(.secondary)
                             .padding(.horizontal, CardStyle.listHorizontalPadding)
-                            .padding(.top, 8)
+                            .padding(.top, AppHeaderStyle.monthLabelTopPadding)
                             .padding(.bottom, 6)
-                    }
                 }
             }
+        }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .appSearchable(text: $searchText)
@@ -824,7 +826,7 @@ private struct ContactsMainContent: View {
     
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: AppButtonStyle.FilterChip.spacing) {
+            HStack(spacing: chipSpacing) {
                 ForEach(chipFilter.allRelations, id: \.self) { relation in
                     Button(action: {
                         let gen = UIImpactFeedbackGenerator(style: .soft)
@@ -833,6 +835,8 @@ private struct ContactsMainContent: View {
                     }) {
                         Text(localizedChipTitle(relation).capitalizedFirstLetter())
                             .font(AppButtonStyle.FilterChip.font)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.88)
                             .foregroundColor(
                                 chipFilter.isSelected(relation)
                                 ? AppButtonStyle.FilterChip.selectedText
@@ -867,14 +871,22 @@ private struct ContactsMainContent: View {
                                 radius: AppButtonStyle.FilterChip.shadowRadius,
                                 y: AppButtonStyle.FilterChip.shadowYOffset
                             )
+                            .frame(minHeight: 44)
                     }
                     .buttonStyle(FilterChipButtonStyle.Press())
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, AppHeaderStyle.filterChipsBottomPadding)
-            .padding(.top, 4)
+            .padding(.horizontal, AppHeaderStyle.horizontalPadding)
+            .padding(.bottom, AppHeaderStyle.listTopPaddingAfterChips)
+            .padding(.top, AppHeaderStyle.filterChipsTopPadding)
         }
+    }
+
+    private var chipSpacing: CGFloat {
+        if horizontalSizeClass == .compact {
+            return max(8, AppButtonStyle.FilterChip.spacing - 6)
+        }
+        return AppButtonStyle.FilterChip.spacing
     }
 
     private func handleLongPress(on contact: Contact) {
@@ -895,6 +907,3 @@ private struct ContactsMainContent: View {
             }
         }
     }
-
-
-

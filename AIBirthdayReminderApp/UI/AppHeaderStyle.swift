@@ -18,9 +18,9 @@ struct AppHeaderStyle {
     /// Вертикальный отступ снизу под фильтрами/чипами на всех экранах
     static let filterChipsBottomPadding: CGFloat = 12
     /// Вертикальный паддинг между областью с фильтрами/чипсами и началом списка карточек (унифицированный для всех экранов)
-    static let listTopPaddingAfterChips: CGFloat = 16
+    static let listTopPaddingAfterChips: CGFloat = 4
     /// Вертикальный паддинг между областью фильтров/чипсов и текстом месяца над списком карточек
-    static let monthLabelTopPadding: CGFloat = 10
+    static let monthLabelTopPadding: CGFloat = 5
 
     /// Минимальный размер тач-таргета для кнопок в топбаре (HIG)
     static let minHitSize: CGFloat = 44
