@@ -211,11 +211,11 @@ private struct PaywallScreen: View {
     private func footerSection(isCompact: Bool) -> some View {
         VStack(spacing: isCompact ? 6 : 12) {
             HStack(spacing: isCompact ? 10 : 16) {
-                Link("Условия", destination: URL(string: "https://cheerful-basement-6d2.notion.site/Terms-of-Use-for-AIBirthday-Reminder-291528ee143080b4bcc2cac7f3d8b4a0")!)
+                Link("Условия", destination: termsURL)
                 Divider()
                     .frame(height: 12)
                     .overlay(Color.white.opacity(0.5))
-                Link("Конфиденциальность", destination: URL(string: "https://cheerful-basement-6d2.notion.site/Privacy-Policy-for-AIBirthday-Reminder-291528ee1430805bbe44d155fcbf8fbc")!)
+                Link("Конфиденциальность", destination: privacyURL)
             }
             .font(adjustedFont(.footnote, weight: .semibold, delta: isCompact ? -2 : -1))
             .foregroundStyle(.white.opacity(0.78))
@@ -224,6 +224,33 @@ private struct PaywallScreen: View {
     }
 
     // MARK: Helpers
+
+    private var termsURL: URL {
+        if isRussianLocalization {
+            return URL(string: "https://cheerful-basement-6d2.notion.site/AIBirthday-Reminder-291528ee143080a18a9fe5c631dc2e85")!
+        }
+        return URL(string: "https://cheerful-basement-6d2.notion.site/Terms-of-Use-for-AIBirthday-Reminder-291528ee143080b4bcc2cac7f3d8b4a0")!
+    }
+
+    private var privacyURL: URL {
+        if isRussianLocalization {
+            return URL(string: "https://cheerful-basement-6d2.notion.site/AIBirthday-Reminder-291528ee14308085bc97ecc0fd0259b7")!
+        }
+        return URL(string: "https://cheerful-basement-6d2.notion.site/Privacy-Policy-for-AIBirthday-Reminder-291528ee1430805bbe44d155fcbf8fbc")!
+    }
+
+    // Use basic locale detection to choose localized policy links.
+    private var isRussianLocalization: Bool {
+        if #available(iOS 16.0, *) {
+            if let identifier = Locale.current.language.languageCode?.identifier {
+                return identifier == "ru"
+            }
+        }
+        if let primary = Locale.preferredLanguages.first {
+            return primary.hasPrefix("ru")
+        }
+        return false
+    }
 
     private func sortProducts(lhs: Product, rhs: Product) -> Bool {
         guard let lhsPeriod = lhs.subscription?.subscriptionPeriod,
