@@ -23,6 +23,7 @@ struct PaywallView: View {
 private struct PaywallScreen: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: StoreKitManager
+    @EnvironmentObject private var lang: LanguageManager
     @State private var selectedProductID: String?
     @State private var isPurchasing: Bool = false
 
@@ -70,7 +71,7 @@ private struct PaywallScreen: View {
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Закрыть", role: .cancel) { dismiss() }
+                    Button("common.close", role: .cancel) { dismiss() }
                         .tint(isLegacyOS ? .white : nil)
                 }
             }
@@ -94,12 +95,12 @@ private struct PaywallScreen: View {
                 .padding(.top, isCompact ? -8 : 4)
 
             VStack(spacing: isCompact ? 2 : 6) {
-                Text("Премиум-доступ")
+                Text("store.paywall.title")
                     .font(adjustedFont(.title1, weight: .bold, delta: isCompact ? -3 : -1))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
 
-                Text("Создавайте идеальные поздравления с помощью ИИ")
+                Text("store.paywall.subtitle")
                     .font(adjustedFont(.callout, delta: isCompact ? -4 : -2))
                     .foregroundStyle(.white.opacity(0.86))
                     .multilineTextAlignment(.center)
@@ -117,7 +118,7 @@ private struct PaywallScreen: View {
             if isLoading {
                 HStack(spacing: 14) {
                     ProgressView().tint(.white)
-                    Text("Загружаем предложения…")
+                    Text("store.paywall.loading")
                         .font(adjustedFont(.callout, delta: isCompact ? -4 : -2))
                         .foregroundStyle(.white.opacity(0.75))
                 }
@@ -128,7 +129,7 @@ private struct PaywallScreen: View {
                     Image(systemName: "exclamationmark.triangle")
                         .font(adjustedFont(.title2, delta: isCompact ? -4 : -2))
                         .foregroundStyle(.white.opacity(0.7))
-                    Text("Не удалось загрузить предложения подписки.")
+                    Text("store.paywall.load_error")
                         .font(adjustedFont(.callout, delta: isCompact ? -4 : -2))
                         .foregroundStyle(.white.opacity(0.8))
                     Button {
@@ -137,7 +138,7 @@ private struct PaywallScreen: View {
                             await store.fetchSubscriptionStatus()
                         }
                     } label: {
-                        Text("Повторить попытку")
+                        Text("common.retry")
                             .font(adjustedFont(.callout, weight: .semibold, delta: isCompact ? -3 : -2))
                     }
                     .buttonStyle(.borderedProminent)
@@ -197,12 +198,12 @@ private struct PaywallScreen: View {
 
     private func perksSection(isCompact: Bool) -> some View {
         VStack(alignment: .leading, spacing: isCompact ? 8 : 10) {
-            Text("Что входит")
+            Text("store.paywall.features.title")
                 .font(adjustedFont(.headline))
                 .foregroundStyle(.white.opacity(0.9))
-            BenefitRow(icon: "wand.and.stars", title: "Персонализированные поздравления на основе контактов и событий.")
-            BenefitRow(icon: "sparkles.rectangle.stack", title: "Авторские дизайны открыток и изображений высокого качества.")
-            BenefitRow(icon: "bolt.horizontal.circle", title: "Мгновенная генерация без ограничений и задержек.")
+            BenefitRow(icon: "wand.and.stars", titleKey: "store.paywall.features.personalized")
+            BenefitRow(icon: "sparkles.rectangle.stack", titleKey: "store.paywall.features.designs")
+            BenefitRow(icon: "bolt.horizontal.circle", titleKey: "store.paywall.features.instant")
         }
         .padding(isCompact ? 16 : 20)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -211,11 +212,11 @@ private struct PaywallScreen: View {
     private func footerSection(isCompact: Bool) -> some View {
         VStack(spacing: isCompact ? 6 : 12) {
             HStack(spacing: isCompact ? 10 : 16) {
-                Link("Условия", destination: termsURL)
+                Link(LocalizedStringKey("store.links.terms"), destination: termsURL)
                 Divider()
                     .frame(height: 12)
                     .overlay(Color.white.opacity(0.5))
-                Link("Конфиденциальность", destination: privacyURL)
+                Link(LocalizedStringKey("store.links.privacy"), destination: privacyURL)
             }
             .font(adjustedFont(.footnote, weight: .semibold, delta: isCompact ? -2 : -1))
             .foregroundStyle(.white.opacity(0.78))
@@ -294,12 +295,12 @@ private struct PaywallScreen: View {
         }
     }
 
-    private func buttonTitle(for product: Product) -> String {
+    private func buttonTitle(for product: Product) -> LocalizedStringKey {
         if let offer = product.subscription?.introductoryOffer,
            offer.paymentMode == .freeTrial {
-            return "Начать бесплатно"
+            return "store.paywall.cta.start_free"
         }
-        return "Продолжить за \(product.displayPrice)"
+        return LocalizedStringKey("store.paywall.cta.subscribe \(product.displayPrice)")
     }
 
     private func purchase(product: Product) async {
@@ -309,10 +310,10 @@ private struct PaywallScreen: View {
         await store.purchase(product: product)
     }
 
-    private var buttonLabel: String {
+    private var buttonLabel: LocalizedStringKey {
         guard let selected = selectedProductID,
               let product = subscriptionProducts.first(where: { $0.id == selected }) else {
-            return "Продолжить"
+            return "store.paywall.cta.default"
         }
         return buttonTitle(for: product)
     }
@@ -340,6 +341,7 @@ private struct SubscriptionPlanCard: View {
     let isPurchasing: Bool
     let isCompact: Bool
     let action: () -> Void
+    @EnvironmentObject private var lang: LanguageManager
 
     var body: some View {
         Button(action: action) {
@@ -362,7 +364,7 @@ private struct SubscriptionPlanCard: View {
 
                         HStack(spacing: isCompact ? 6 : 8) {
                             if isPending {
-                                StatusBadge(text: "В обработке", color: .yellow.opacity(0.85))
+                                StatusBadge(text: "store.paywall.status.pending", color: .yellow.opacity(0.85))
                             }
                         }
                     }
@@ -407,19 +409,22 @@ private struct SubscriptionPlanCard: View {
     }
 
     private func periodDescription(for product: Product) -> String {
-        guard let subscription = product.subscription else { return "Подписка" }
+        guard let subscription = product.subscription else { return localized("store.paywall.plan.type.subscription") }
         let unit = subscription.subscriptionPeriod.unit
         let value = subscription.subscriptionPeriod.value
         switch unit {
-        case .day: return value == 1 ? "Оплата ежедневно" : "Каждые \(value) дн."
+        case .day: return value == 1 ? localized("store.paywall.plan.billing.day.single")
+            : localized("store.paywall.plan.billing.day.multi", value)
         case .week:
-            if value == 1 { return "Оплата еженедельно" }
-            if value == 2 { return "Каждые 2 недели" }
-            if value == 4 { return "Каждые 4 недели" }
-            return "Каждые \(value) недели"
-        case .month: return value == 1 ? "Оплата ежемесячно" : "Каждые \(value) мес."
-        case .year: return value == 1 ? "Оплата ежегодно" : "Каждые \(value) г."
-        @unknown default: return "Подписка"
+            if value == 1 { return localized("store.paywall.plan.billing.week.single") }
+            if value == 2 { return localized("store.paywall.plan.billing.week.two") }
+            if value == 4 { return localized("store.paywall.plan.billing.week.four") }
+            return localized("store.paywall.plan.billing.week.multi", value)
+        case .month: return value == 1 ? localized("store.paywall.plan.billing.month.single")
+            : localized("store.paywall.plan.billing.month.multi", value)
+        case .year: return value == 1 ? localized("store.paywall.plan.billing.year.single")
+            : localized("store.paywall.plan.billing.year.multi", value)
+        @unknown default: return localized("store.paywall.plan.billing.unknown")
         }
     }
 
@@ -430,11 +435,11 @@ private struct SubscriptionPlanCard: View {
         let period = subscription.subscriptionPeriod
         switch intro.paymentMode {
         case .freeTrial:
-            return "\(period.localizedDescription) бесплатно"
+            return localized("store.paywall.offer.free", period.localizedDescription(locale: lang.locale))
         case .payAsYouGo:
-            return "\(price) \(period.localizedShort) • \(intro.periodCount) раз"
+            return localized("store.paywall.offer.paygo", price, period.localizedShort(locale: lang.locale), intro.periodCount)
         case .payUpFront:
-            return "\(price) за \(period.localizedDescription)"
+            return localized("store.paywall.offer.payupfront", price, period.localizedDescription(locale: lang.locale))
         default:
             return nil
         }
@@ -462,6 +467,10 @@ private struct SubscriptionPlanCard: View {
         case .selected: return 2
         default: return 1
         }
+    }
+
+    private func localized(_ key: String, _ arguments: CVarArg...) -> String {
+        localizedString(key, locale: lang.locale, arguments: arguments)
     }
 }
 
@@ -518,7 +527,7 @@ private struct SelectionIndicator: View {
 }
 
 private struct StatusBadge: View {
-    let text: String
+    let text: LocalizedStringKey
     let color: Color
 
     var body: some View {
@@ -592,7 +601,7 @@ private struct PreviewCardView: View {
                 .stroke(Color.white.opacity(0.12), lineWidth: 0.6)
         )
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Заготовка открытки")
+        .accessibilityLabel(Text("store.paywall.preview.accessibility"))
     }
 }
 
@@ -644,9 +653,37 @@ private func adjustedFont(_ style: UIFont.TextStyle, weight: Font.Weight = .regu
     return .system(size: adjusted, weight: weight)
 }
 
+private func localizedString(_ key: String, locale: Locale, arguments: [CVarArg] = []) -> String {
+    let bundle = localizationBundle(for: locale)
+    let format = bundle.localizedString(forKey: key, value: nil, table: nil)
+    guard arguments.isEmpty == false else { return format }
+    return String(format: format, locale: locale, arguments: arguments)
+}
+
+private func localizationBundle(for locale: Locale) -> Bundle {
+    if let path = Bundle.main.path(forResource: locale.identifier, ofType: "lproj"),
+       let bundle = Bundle(path: path) {
+        return bundle
+    }
+    if let languageCode = localeLanguageCode(locale),
+       let path = Bundle.main.path(forResource: languageCode, ofType: "lproj"),
+       let bundle = Bundle(path: path) {
+        return bundle
+    }
+    return .main
+}
+
+private func localeLanguageCode(_ locale: Locale) -> String? {
+    if #available(iOS 16.0, *) {
+        return locale.language.languageCode?.identifier
+    } else {
+        return locale.languageCode
+    }
+}
+
 private struct BenefitRow: View {
     let icon: String
-    let title: String
+    let titleKey: LocalizedStringKey
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -661,7 +698,7 @@ private struct BenefitRow: View {
                             Circle().stroke(.white.opacity(0.18), lineWidth: 1)
                         )
                 )
-            Text(title)
+            Text(titleKey)
                 .font(adjustedFont(.subheadline))
                 .foregroundStyle(.white.opacity(0.92))
             Spacer(minLength: 0)
@@ -746,27 +783,50 @@ private extension Product.SubscriptionPeriod {
         }
     }
 
-    var localizedDescription: String {
+    func localizedDescription(locale: Locale) -> String {
         switch unit {
-        case .day: return value == 1 ? "1 день" : "\(value) дней"
-        case .week: return value == 1 ? "1 неделя" : "\(value) недель"
-        case .month: return value == 1 ? "1 месяц" : "\(value) месяцев"
-        case .year: return value == 1 ? "1 год" : "\(value) лет"
-        @unknown default: return "\(value)"
+        case .day:
+            return value == 1
+            ? localizedString("store.paywall.period.description.day.single", locale: locale)
+            : localizedString("store.paywall.period.description.day.multi", locale: locale, arguments: [value])
+        case .week:
+            return value == 1
+            ? localizedString("store.paywall.period.description.week.single", locale: locale)
+            : localizedString("store.paywall.period.description.week.multi", locale: locale, arguments: [value])
+        case .month:
+            return value == 1
+            ? localizedString("store.paywall.period.description.month.single", locale: locale)
+            : localizedString("store.paywall.period.description.month.multi", locale: locale, arguments: [value])
+        case .year:
+            return value == 1
+            ? localizedString("store.paywall.period.description.year.single", locale: locale)
+            : localizedString("store.paywall.period.description.year.multi", locale: locale, arguments: [value])
+        @unknown default:
+            return localizedString("store.paywall.period.description.generic", locale: locale, arguments: [value])
         }
     }
 
-    var localizedShort: String {
+    func localizedShort(locale: Locale) -> String {
         switch unit {
-        case .day: return value == 1 ? "в день" : "каждые \(value) дн."
+        case .day:
+            return value == 1
+            ? localizedString("store.paywall.period.short.day.single", locale: locale)
+            : localizedString("store.paywall.period.short.day.multi", locale: locale, arguments: [value])
         case .week:
-            if value == 1 { return "еженедельно" }
-            if value == 2 { return "каждые 2 недели" }
-            if value == 4 { return "каждые 4 недели" }
-            return "каждые \(value) недели"
-        case .month: return value == 1 ? "ежемесячно" : "каждые \(value) мес."
-        case .year: return value == 1 ? "ежегодно" : "каждые \(value) г."
-        @unknown default: return ""
+            if value == 1 {
+                return localizedString("store.paywall.period.short.week.single", locale: locale)
+            }
+            return localizedString("store.paywall.period.short.week.multi", locale: locale, arguments: [value])
+        case .month:
+            return value == 1
+            ? localizedString("store.paywall.period.short.month.single", locale: locale)
+            : localizedString("store.paywall.period.short.month.multi", locale: locale, arguments: [value])
+        case .year:
+            return value == 1
+            ? localizedString("store.paywall.period.short.year.single", locale: locale)
+            : localizedString("store.paywall.period.short.year.multi", locale: locale, arguments: [value])
+        @unknown default:
+            return localizedString("store.paywall.period.short.generic", locale: locale, arguments: [value])
         }
     }
 }

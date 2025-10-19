@@ -22,7 +22,7 @@ import ContactsUI
                     Button {
                         showSubscription = true
                     } label: {
-                        Label("Подписка", systemImage: "star.circle")
+                        Label(LocalizedStringKey("settings.subscription"), systemImage: "star.circle")
                             .font(.headline)
                             .padding(.vertical, 8)
                     }
@@ -31,7 +31,7 @@ import ContactsUI
                     Button {
                         showSupport = true
                     } label: {
-                        Label("Поддержка", systemImage: "questionmark.circle")
+                        Label(LocalizedStringKey("settings.support"), systemImage: "questionmark.circle")
                             .font(.headline)
                             .padding(.vertical, 8)
                     }
@@ -274,14 +274,14 @@ struct SupportView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section(header: Text("Поддержка")) {
-                    Text("Если нужна помощь или есть вопросы по подписке, напишите нам: hello@aibirthday.app")
+                Section(header: Text("settings.support")) {
+                    Text("support.body")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                Section(footer: Text("Apple обработает запрос на возврат и уведомит о результате.")) {
+                Section(footer: Text("support.refund.footer")) {
                     Button {
                         Task { await requestRefund() }
                     } label: {
@@ -290,16 +290,16 @@ struct SupportView: View {
                                 ProgressView()
                                     .progressViewStyle(.circular)
                             }
-                            Text("Запросить возврат")
+                            Text("support.refund.request")
                         }
                     }
                     .disabled(isRequestingRefund)
                 }
             }
-            .navigationTitle("Справка и поддержка")
+            .navigationTitle("support.nav.title")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Готово") { dismiss() }
+                    Button("common.done") { dismiss() }
                 }
             }
         }
