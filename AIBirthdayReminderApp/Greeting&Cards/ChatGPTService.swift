@@ -109,7 +109,18 @@ final class ChatGPTService {
     // MARK: - Генерация открытки (prompt формируется во View!)
     // Новый синтаксис: backend будет работать с appAccountToken от DeviceAccountManager
     func generateCard(for contact: Contact, prompt: String, quality: String, referenceImage: UIImage? = nil, size: String, completion: @escaping () -> Void) {
-        let finalPrompt = prompt
+        let baseInstruction = """
+        You are GPT Image 1 acting as a professional greeting card illustrator. Design a polished celebratory birthday card cover. The image must unmistakably look like the front of a greeting card: include a balanced layout, festive decorative elements, tasteful typography with a clear congratulatory headline on the card itself, and cohesive color styling. Ensure all on-card text fits completely within the card without any cropping or cut-off characters. Avoid generic illustrations, posters, or plain scenes—always present a finished greeting card front.
+        """
+        let sanitizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalPrompt = sanitizedPrompt.isEmpty
+            ? baseInstruction
+            : """
+            \(baseInstruction)
+
+            Personalization details to incorporate:
+            \(sanitizedPrompt)
+            """
         print("🧠 Final image prompt: \n\(finalPrompt)")
         var referenceImageData: Data? = nil
         if let referenceImage = referenceImage,
