@@ -1,0 +1,21 @@
+{
+  "images" : [
+    {
+      "filename" : "20251025_1220_Collector's Workspace Masterpiece_remix_01k8dakabjek0aw3wkkj0yysb6.png",
+      "idiom" : "universal",
+      "scale" : "1x"
+    },
+    {
+      "idiom" : "universal",
+      "scale" : "2x"
+    },
+    {
+      "idiom" : "universal",
+      "scale" : "3x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

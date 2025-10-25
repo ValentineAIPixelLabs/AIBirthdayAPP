@@ -1,5 +1,55 @@
 import UIKit
 import SwiftUI
+import PhotosUI
+
+private enum CardRemixState: Equatable {
+    case initial
+    case photoPicked
+    case templatePicked
+    case generating
+    case result
+}
+
+struct CardRemixTemplate: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let prompt: String
+    let previewImageName: String
+    let description: String?
+
+    init(id: String, title: String, prompt: String, previewImageName: String, description: String? = nil) {
+        self.id = id
+        self.title = title
+        self.prompt = prompt
+        self.previewImageName = previewImageName
+        self.description = description
+    }
+}
+
+extension CardRemixTemplate {
+    static let muppet3D = CardRemixTemplate(
+        id: "muppet-3d-happy-birthday",
+        title: "Muppet 3D Happy Birthday",
+        prompt: """
+Remake the person in the photo into a stylized animated 3D boy or girl, depending on who is in the uploaded photo, shown from the waist up, smiling gently with a calm and cheerful expression. His skin, hair, and clothing have a soft Muppet-style texture — like felt or plush fabric — giving him a handcrafted, cozy look. Use the hair color and hairstyle from the person in the photo, with a soft transition and smooth, rosy cheeks. His eyes are realistic human eyes: round, moist, and expressive, with detailed irises and natural highlights that add emotional depth to his soft, toy-like face. His eyes are the same color as the person in the photo. He is dressed in clothes that are as similar as possible to the clothes the person in the photo is wearing, as well as the same accessories and jewelry, if any, all with a plush texture. His head follows the same tilt as the person in the photo. The background is a smooth, warm beige or light pastel tone, softly illuminated with minimal shadows. The overall style is a combination of hand-drawn Muppet charm and expressive realism, mixing soft textures with realistic eyes and a modern, childlike feel, and all this in the form of a greeting card, with the text Happy birthday.
+""",
+        previewImageName: "Muppet3DTemplate",
+        description: "Плюшевый 3D-стиль с мягким освещением и надписью Happy birthday"
+    )
+
+    static let hotToysCollector = CardRemixTemplate(
+        id: "hot-toys-collector-desk",
+        title: "Hot Toys Collector Desk",
+        prompt: "A realistic 1/7 scale Hot Toys [Reference Photo Man] figure on a computer desk, clear acrylic base, monitor showing the process of creating the same figure in ZBrush, BANDAI style box with the figure inside in the background, a modern collector's workspace, excellent lighting, cinematic depth of field, highly detailed textures, 2:3 aspect ratio, 300 dpi.",
+        previewImageName: "HotToysTemplate",
+        description: "Фигурка Hot Toys 1/7 на рабочем столе коллекционера, рендер в стиле BANDAI"
+    )
+
+    static let all: [CardRemixTemplate] = [
+        .muppet3D,
+        .hotToysCollector
+    ]
+}
 // MARK: - Localization helpers (file-local)
 private func appLocale() -> Locale {
     if let code = UserDefaults.standard.string(forKey: "app.language.code") { return Locale(identifier: code) }
@@ -57,6 +107,12 @@ struct ActivityViewController: UIViewControllerRepresentable {
     @State private var allowCardPopupClose = false
 
     @State private var preGenCardIDs: Set<UUID> = []
+    @State private var cardRemixState: CardRemixState = .initial
+    @State private var selectedTemplate: CardRemixTemplate? = nil
+    @State private var generatedRemixImage: UIImage? = nil
+    @State private var isGeneratingCardImage = false
+    @State private var showRemixShareSheet = false
+    @State private var remixShareImage: UIImage? = nil
 
     @State private var fakeProgress: Double = 0
     @State private var progressTimer: Timer? = nil
@@ -88,6 +144,27 @@ struct ActivityViewController: UIViewControllerRepresentable {
         .onDisappear {
             progressTimer?.invalidate()
             progressTimer = nil
+        }
+        .onChange(of: referenceImage) { newValue in
+            generatedRemixImage = nil
+            if newValue == nil {
+                selectedTemplate = nil
+            }
+            recalcCardRemixState()
+        }
+        .onChange(of: selectedTemplate) { newValue in
+            generatedRemixImage = nil
+            if newValue == nil && cardRemixState == .templatePicked {
+                cardRemixState = referenceImage == nil ? .initial : .photoPicked
+            }
+            recalcCardRemixState()
+        }
+        .onChange(of: generatedRemixImage) { newValue in
+            if newValue == nil {
+                remixShareImage = nil
+                showRemixShareSheet = false
+            }
+            recalcCardRemixState()
         }
         .overlay(loadingOverlay)
         .alert(isPresented: Binding<Bool>(
@@ -233,6 +310,11 @@ struct ActivityViewController: UIViewControllerRepresentable {
         .sheet(isPresented: $showStore) {
             PaywallView()
         }
+        .sheet(isPresented: $showRemixShareSheet, onDismiss: { remixShareImage = nil }) {
+            if let image = remixShareImage {
+                ActivityViewController(activityItems: [image])
+            }
+        }
         .navigationTitle(navigationTitleText)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
@@ -376,16 +458,34 @@ struct ActivityViewController: UIViewControllerRepresentable {
             if selectedMode == "card" {
                 CardGenerationSection(
                     referenceImage: $referenceImage,
-                    showImagePicker: $showImagePicker,
                     prompt: $prompt,
                     promptCharLimit: promptCharLimit,
                     selectedCardStyle: $selectedCardStyle,
                     selectedAspectRatio: $selectedAspectRatio,
                     selectedQuality: $selectedQuality,
                     isLoading: $isLoading,
+                    cardRemixState: $cardRemixState,
+                    selectedTemplate: $selectedTemplate,
+                    generatedImage: $generatedRemixImage,
+                    exampleImageName: remixExampleImageName,
                     onGeneratePrompt: generateCreativePrompt,
-                    onRemoveReferenceImage: { referenceImage = nil },
-                    onGenerateCard: handleGenerate
+                    onRemoveReferenceImage: {
+                        referenceImage = nil
+                    },
+                    onTemplateSelected: { template in
+                        selectedTemplate = template
+                    },
+                    onTemplateCleared: {
+                        selectedTemplate = nil
+                    },
+                    onGenerateCard: handleGenerate,
+                    onShareGeneratedImage: { image in
+                        remixShareImage = image
+                        showRemixShareSheet = true
+                    },
+                    onSaveGeneratedImage: { image in
+                        UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+                    }
                 )
             }
 
@@ -464,37 +564,89 @@ struct ActivityViewController: UIViewControllerRepresentable {
         )
     }
 
+    private func recalcCardRemixState() {
+        if isGeneratingCardImage {
+            cardRemixState = .generating
+            return
+        }
+        if generatedRemixImage != nil {
+            cardRemixState = .result
+        } else if selectedTemplate != nil, referenceImage != nil {
+            cardRemixState = .templatePicked
+        } else if referenceImage != nil {
+            cardRemixState = .photoPicked
+        } else {
+            cardRemixState = .initial
+        }
+    }
+
     // MARK: - Card Generation State & Handlers
     @State private var referenceImage: UIImage? = nil
-    @State private var showImagePicker: Bool = false
     @State private var prompt: String = ""
     private let promptCharLimit: Int = 1000
+    private let remixExampleImageName = CardRemixTemplate.muppet3D.previewImageName
     @State private var selectedCardStyle: CardVisualStyle = .none
-    @State private var selectedAspectRatio: CardAspectRatio = .square
+    @State private var selectedAspectRatio: CardAspectRatio = .portrait
     @State private var selectedQuality: CardQuality = .medium
 
     private func handleGenerate() {
         alertMessage = nil
         guard !isLoading else { return }
-        print("🎬 handleGenerate start: isLoading=\(isLoading), showCardPopup=\(showCardPopup), showCardShareSheet=\(showCardShareSheet)")
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasTemplate = selectedTemplate != nil
+        let hasPhoto = referenceImage != nil
+        let isPhotoRemix = hasTemplate && hasPhoto
+
+        print("🎬 handleGenerate start: isLoading=\(isLoading), remix=\(isPhotoRemix), showCardPopup=\(showCardPopup), showCardShareSheet=\(showCardShareSheet)")
         print("🧾 Params: promptLen=\(prompt.count), hasReference=\(referenceImage != nil), style=\(selectedCardStyle), aspect=\(selectedAspectRatio.apiValue), quality=\(selectedQuality)")
-        // Snapshot existing card IDs before generation
         preGenCardIDs = Set(cardHistory.map { $0.id })
-        // Pre-dismiss any potential presenters to avoid "present while presenting" race
-        showImagePicker = false
         showStore = false
         showShareSheet = false
         showCardShareSheet = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        // Вход больше не требуется: используем устойчивый идентификатор устройства.
 
         loadingType = .image
         isLoading = true
 
+        if isPhotoRemix, let template = selectedTemplate, let sourceImage = referenceImage {
+            isGeneratingCardImage = true
+            generatedRemixImage = nil
+            recalcCardRemixState()
+
+            ChatGPTService.shared.generateCardRemix(
+                for: contact,
+                template: template,
+                userIdea: trimmedPrompt.isEmpty ? nil : trimmedPrompt,
+                sourceImage: sourceImage,
+                quality: selectedQuality.apiValue,
+                size: selectedAspectRatio.apiValue
+            ) { result in
+                DispatchQueue.main.async {
+                    self.isGeneratingCardImage = false
+                    self.progressTimer?.invalidate()
+                    self.fakeProgress = 0
+                    switch result {
+                    case .success(let image):
+                        self.isLoading = false
+                        self.loadingType = nil
+                        self.generatedRemixImage = image
+                        self.cardHistory = CardHistoryManager.getCards(for: self.contact.id)
+                        self.cardRemixState = .result
+                        Task { await self.store.fetchServerTokens() }
+                    case .failure(let error):
+                        self.isLoading = false
+                        self.loadingType = nil
+                        self.alertMessage = "Ошибка генерации: \(error.localizedDescription)"
+                        self.recalcCardRemixState()
+                    }
+                }
+            }
+            return
+        }
+
         ChatGPTService.shared.generateCard(
             for: contact,
             prompt: {
-                let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
                 let styleSuffix = selectedCardStyle.promptSuffix
                 if !styleSuffix.isEmpty {
                     return trimmedPrompt.isEmpty ? styleSuffix : "\(trimmedPrompt)\n\n\(styleSuffix)"
@@ -502,13 +654,7 @@ struct ActivityViewController: UIViewControllerRepresentable {
                     return trimmedPrompt
                 }
             }(),
-            quality: {
-                switch selectedQuality {
-                    case .low: return "low"
-                    case .medium: return "medium"
-                    case .high: return "high"
-                }
-            }(),
+            quality: selectedQuality.apiValue,
             referenceImage: referenceImage,
             size: selectedAspectRatio.apiValue
         ) {
@@ -517,7 +663,6 @@ struct ActivityViewController: UIViewControllerRepresentable {
                 cardHistory = CardHistoryManager.getCards(for: contact.id)
                 print("📊 История открыток после генерации: \(cardHistory.count) шт.")
                 print("🧵 On main thread: \(Thread.isMainThread)")
-                // Stop loader BEFORE presenting popup to avoid phantom taps
                 isLoading = false
                 loadingType = nil
                 progressTimer?.invalidate()
@@ -539,20 +684,22 @@ struct ActivityViewController: UIViewControllerRepresentable {
                 } else {
                     print("⚠️ Could not pick a card image to present (either empty history or image missing)")
                 }
-               
+
                 Task { await store.fetchServerTokens() }
             }
         }
     }
-
     // MARK: - Card Generation Settings Reset
     private func resetCardGenerationSettings() {
         prompt = ""
         referenceImage = nil
         selectedCardStyle = .none
-        selectedAspectRatio = .square
+        selectedAspectRatio = .portrait
         selectedQuality = .medium
-        showImagePicker = false
+        selectedTemplate = nil
+        generatedRemixImage = nil
+        cardRemixState = .initial
+        isGeneratingCardImage = false
         fakeProgress = 0
         progressTimer?.invalidate()
     }
@@ -1016,104 +1163,287 @@ struct ZoomableImage: UIViewRepresentable {
 // MARK: - Card Generation UI Section
 private struct CardGenerationSection: View {
     @Binding var referenceImage: UIImage?
-    @Binding var showImagePicker: Bool
     @Binding var prompt: String
     let promptCharLimit: Int
     @Binding var selectedCardStyle: CardVisualStyle
     @Binding var selectedAspectRatio: CardAspectRatio
     @Binding var selectedQuality: CardQuality
     @Binding var isLoading: Bool
+    @Binding var cardRemixState: CardRemixState
+    @Binding var selectedTemplate: CardRemixTemplate?
+    @Binding var generatedImage: UIImage?
+    let exampleImageName: String
     var onGeneratePrompt: () -> Void
     var onRemoveReferenceImage: () -> Void
+    var onTemplateSelected: (CardRemixTemplate) -> Void
+    var onTemplateCleared: () -> Void
     var onGenerateCard: () -> Void
-    
-    @State private var showAddMenu = false
+    var onShareGeneratedImage: (UIImage) -> Void
+    var onSaveGeneratedImage: (UIImage) -> Void
 
-    // Dynamic token price for image generation (parity with backend)
+    @State private var photoPickerItem: PhotosPickerItem?
+    @State private var showTemplatePicker = false
+
     private func imageTokenPrice() -> Int {
-        // Base cost per 1024x1024 tile by quality
         let base: Int
         switch selectedQuality {
-        case .low:    base = 1
-        case .medium: base = 4
-        case .high:   base = 17
+        case .low:
+            base = 1
+        case .medium:
+            base = 4
+        case .high:
+            base = 17
         }
-        // Parse size like "1024x1536"
-        let comps = selectedAspectRatio.apiValue.split(separator: "x")
+        let components = selectedAspectRatio.apiValue.split(separator: "x")
         var multiplier: Double = 1
-        if comps.count == 2, let w = Double(comps[0]), let h = Double(comps[1]) {
-            let area = w * h
+        if components.count == 2,
+           let width = Double(components[0]),
+           let height = Double(components[1]) {
+            let area = width * height
             let tile = 1024.0 * 1024.0
-            let rawMul = area / tile
-            // round up to hundredths, minimum 1
-            multiplier = max(1, ceil(rawMul * 100) / 100)
+            multiplier = max(1, ceil((area / tile) * 100) / 100)
         }
         var cost = Int(ceil(Double(base) * multiplier))
-        // +1 token if reference image is supplied
-        if referenceImage != nil { cost += 1 }
+        if referenceImage != nil {
+            cost += 1
+        }
         return max(1, cost)
     }
 
+    private var promptTrimmed: String {
+        prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var promptTooLong: Bool {
+        prompt.count > promptCharLimit
+    }
+
+    private var requiresPromptInput: Bool {
+        selectedTemplate == nil
+    }
+
+    private var remixReady: Bool {
+        referenceImage != nil && selectedTemplate != nil
+    }
+
+    private var generateDisabled: Bool {
+        let disabledByLoading = isLoading
+        let disabledByPromptRequirement = requiresPromptInput && promptTrimmed.isEmpty
+        let disabledByLength = promptTooLong
+        let disabledByRemixInputs = selectedTemplate != nil && !remixReady
+        return disabledByLoading || disabledByPromptRequirement || disabledByLength || disabledByRemixInputs
+    }
+
+    private var generateOpacity: Double {
+        generateDisabled ? 0.6 : 1
+    }
+
+    private var addPhotoSymbolName: String {
+        referenceImage == nil ? "photo.badge.plus" : "photo.fill"
+    }
+
+    private var templateButtonTitle: String {
+        if let template = selectedTemplate {
+            return template.title
+        }
+        return String(localized: "template.button.title", defaultValue: "Шаблон", bundle: appBundle(), locale: appLocale())
+    }
+
+    private var templateButtonDisabled: Bool {
+        referenceImage == nil
+    }
+
     var body: some View {
-        ZStack {
-            VStack(alignment: .leading, spacing: 14) {
-                // Composer bar: glass-like prompt field with add/idea buttons and char counter
-                PromptComposerBar(
-                    text: $prompt,
-                    placeholder: String(localized: "prompt.placeholder", defaultValue: "Опишите идею открытки или нажмите на кнопку «Идея открытки» для автоматической генерации", bundle: appBundle(), locale: appLocale()),
-                    charLimit: promptCharLimit,
-                    onAddTapped: { showAddMenu = true },
-                    onIdeaTapped: { onGeneratePrompt() }
+        VStack(alignment: .leading, spacing: 16) {
+            if cardRemixState == .initial {
+                CardRemixPlaceholder(
+                    title: String(localized: "remix.placeholder.title", defaultValue: "Пожалуйста, выберите фотографию", bundle: appBundle(), locale: appLocale()),
+                    buttonTitle: String(localized: "remix.placeholder.button", defaultValue: "Выбрать фото", bundle: appBundle(), locale: appLocale()),
+                    photoPickerItem: $photoPickerItem
                 )
-                .confirmationDialog(String(localized: "common.add", defaultValue: "Добавить", bundle: appBundle(), locale: appLocale()), isPresented: $showAddMenu, titleVisibility: .visible) {
-                    Button(String(localized: "gallery.pick_reference", defaultValue: "Выбрать референс из галереи", bundle: appBundle(), locale: appLocale())) { showImagePicker = true }
-                    if referenceImage != nil {
-                        Button(String(localized: "reference.remove", defaultValue: "Удалить референс", bundle: appBundle(), locale: appLocale()), role: .destructive) { onRemoveReferenceImage() }
-                    }
-                    Button(String(localized: "common.cancel", defaultValue: "Отмена", bundle: appBundle(), locale: appLocale()), role: .cancel) {}
-                }
-
-                // Optional preview of reference
-                if let image = referenceImage {
-                    HStack(spacing: 8) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 56, height: 56)
-                            .clipped()
-                            .cornerRadius(10)
-                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), lineWidth: 1))
-                        Button(String(localized: "common.delete", defaultValue: "Удалить", bundle: appBundle(), locale: appLocale()), role: .destructive) { onRemoveReferenceImage() }
-                            .buttonStyle(.plain)
-                        Spacer()
-                    }
-                }
-
-                // Unified parameters row: Style, Aspect Ratio & Quality (pill menus in one line)
-                HStack(spacing: 8) {
-                    StyleMenuPill(selected: $selectedCardStyle)
-                    AspectRatioMenuPill(selected: $selectedAspectRatio)
-                    QualityMenuPill(selected: $selectedQuality)
-                }
-
-                // Generate card CTA with token price
-                PrimaryCTAButton(title: String(localized: "card.generate", defaultValue: "Сгенерировать открытку", bundle: appBundle(), locale: appLocale()), systemImage: "photo.on.rectangle.angled", price: imageTokenPrice(), isLoading: isLoading, action: onGenerateCard)
-                .opacity(
-                    isLoading ||
-                    prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                    prompt.count > promptCharLimit
-                    ? 0.6 : 1
-                )
-                .disabled(
-                    isLoading ||
-                    prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                    prompt.count > promptCharLimit
+            } else {
+                CardRemixPreview(
+                    state: cardRemixState,
+                    exampleImageName: exampleImageName,
+                    referenceImage: referenceImage,
+                    generatedImage: generatedImage,
+                    selectedTemplate: selectedTemplate
                 )
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 2)
-            .sheet(isPresented: $showImagePicker) {
-                ImagePicker { image in
+
+            previewActions()
+
+            PromptComposerBar(
+                text: $prompt,
+                placeholder: String(localized: "prompt.placeholder", defaultValue: "Опишите идею открытки или нажмите на кнопку «Идея открытки» для автоматической генерации", bundle: appBundle(), locale: appLocale()),
+                charLimit: promptCharLimit,
+                addButton: {
+                    PhotosPicker(selection: $photoPickerItem, matching: .images) {
+                        Image(systemName: addPhotoSymbolName)
+                            .font(.system(size: 16, weight: .semibold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
+                            .background(.thinMaterial, in: Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(String(localized: "gallery.pick_reference", defaultValue: "Выбрать фото из галереи", bundle: appBundle(), locale: appLocale()))
+                },
+                onIdeaTapped: onGeneratePrompt
+            )
+
+            controlRow()
+
+            PrimaryCTAButton(
+                title: String(localized: "card.generate", defaultValue: "Сгенерировать открытку", bundle: appBundle(), locale: appLocale()),
+                systemImage: "photo.on.rectangle.angled",
+                price: imageTokenPrice(),
+                isLoading: isLoading,
+                action: onGenerateCard
+            )
+            .opacity(generateOpacity)
+            .disabled(generateDisabled)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 2)
+        .onChange(of: photoPickerItem) { newValue in
+            guard let item = newValue else { return }
+            loadPickedImage(item)
+        }
+        .sheet(isPresented: $showTemplatePicker) {
+            TemplatePickerSheet(
+                templates: CardRemixTemplate.all,
+                selectedTemplate: selectedTemplate,
+                onSelect: { template in
+                    onTemplateSelected(template)
+                },
+                onClear: {
+                    onTemplateCleared()
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func previewActions() -> some View {
+        switch cardRemixState {
+        case .photoPicked, .templatePicked:
+            HStack(spacing: 12) {
+                PhotosPicker(selection: $photoPickerItem, matching: .images) {
+                    actionCapsule(
+                        icon: "arrow.triangle.2.circlepath.camera",
+                        title: String(localized: "photo.replace", defaultValue: "Заменить фото", bundle: appBundle(), locale: appLocale())
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(String(localized: "photo.replace.accessibility", defaultValue: "Заменить выбранное фото", bundle: appBundle(), locale: appLocale()))
+
+                Button {
+                    onRemoveReferenceImage()
+                } label: {
+                    actionCapsule(
+                        icon: "trash",
+                        title: String(localized: "reference.remove", defaultValue: "Удалить референс", bundle: appBundle(), locale: appLocale())
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        case .result:
+            if let image = generatedImage {
+                HStack(spacing: 12) {
+                    Button {
+                        onShareGeneratedImage(image)
+                    } label: {
+                        Label(String(localized: "common.share", defaultValue: "Поделиться", bundle: appBundle(), locale: appLocale()), systemImage: "square.and.arrow.up")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(.thinMaterial, in: Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        onSaveGeneratedImage(image)
+                    } label: {
+                        Label(String(localized: "common.save", defaultValue: "Сохранить", bundle: appBundle(), locale: appLocale()), systemImage: "square.and.arrow.down")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(.thinMaterial, in: Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private func controlRow() -> some View {
+        HStack(spacing: 8) {
+            if referenceImage != nil || generatedImage != nil {
+                Button {
+                    showTemplatePicker = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(templateButtonTitle)
+                            .font(.footnote.weight(.semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.9)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .frame(minHeight: 34)
+                    .background(.thinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+                    .overlay(alignment: .topTrailing) {
+                        if selectedTemplate != nil {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.accentColor)
+                                .offset(x: 6, y: -6)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(templateButtonDisabled)
+                .opacity(templateButtonDisabled ? 0.5 : 1)
+            }
+
+            StyleMenuPill(selected: $selectedCardStyle)
+                .disabled(selectedTemplate != nil)
+                .opacity(selectedTemplate != nil ? 0.35 : 1)
+
+            AspectRatioMenuPill(selected: $selectedAspectRatio)
+            QualityMenuPill(selected: $selectedQuality)
+        }
+    }
+
+    @ViewBuilder
+    private func actionCapsule(icon: String, title: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.thinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+    }
+
+    private func loadPickedImage(_ item: PhotosPickerItem) {
+        Task {
+            let data = try? await item.loadTransferable(type: Data.self)
+            await MainActor.run {
+                defer { photoPickerItem = nil }
+                if let data, let image = UIImage(data: data) {
                     referenceImage = image
                 }
             }
@@ -1121,6 +1451,333 @@ private struct CardGenerationSection: View {
     }
 }
 
+private struct CardRemixPreview: View {
+    let state: CardRemixState
+    let exampleImageName: String
+    let referenceImage: UIImage?
+    let generatedImage: UIImage?
+    let selectedTemplate: CardRemixTemplate?
+
+    private var previewImage: Image {
+        if state == .result, let generatedImage {
+            return Image(uiImage: generatedImage)
+        }
+        if let referenceImage {
+            return Image(uiImage: referenceImage)
+        }
+        return Image(exampleImageName)
+    }
+
+    private var caption: String {
+        switch state {
+        case .initial:
+            return String(localized: "remix.preview.example", defaultValue: "Пример результата", bundle: appBundle(), locale: appLocale())
+        case .photoPicked:
+            return String(localized: "remix.preview.photo", defaultValue: "Фото выбрано", bundle: appBundle(), locale: appLocale())
+        case .templatePicked:
+            return String(localized: "remix.preview.template", defaultValue: "Шаблон выбран", bundle: appBundle(), locale: appLocale())
+        case .generating:
+            return String(localized: "remix.preview.generating", defaultValue: "Генерация открытки…", bundle: appBundle(), locale: appLocale())
+        case .result:
+            return String(localized: "remix.preview.result", defaultValue: "Готовая открытка", bundle: appBundle(), locale: appLocale())
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            previewImage
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity, minHeight: 216, maxHeight: 216)
+                .clipped()
+                .background(Color(.systemGray6))
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
+                    LinearGradient(
+                        colors: [Color.black.opacity(0.35), Color.clear],
+                        startPoint: .bottom,
+                        endPoint: .center
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.18), lineWidth: 0.9)
+                )
+
+            if state == .generating {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle())
+                    .tint(.white)
+                    .scaleEffect(1.2)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(caption)
+                    .font(.headline.weight(.semibold))
+                if let template = selectedTemplate, state != .initial {
+                    Text(template.title)
+                        .font(.subheadline.weight(.medium))
+                }
+            }
+            .foregroundColor(.white)
+            .shadow(radius: 4)
+            .padding(.horizontal, 18)
+            .padding(.bottom, 18)
+        }
+        .accessibilityLabel(caption)
+    }
+}
+
+private struct CardRemixPlaceholder: View {
+    let title: String
+    let buttonTitle: String
+    @Binding var photoPickerItem: PhotosPickerItem?
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(.systemGray5).opacity(0.6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.18), lineWidth: 0.9)
+                )
+
+            VStack(spacing: 16) {
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.primary)
+                    .padding(.horizontal, 24)
+
+                PhotosPicker(selection: $photoPickerItem, matching: .images) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text(buttonTitle)
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .background(.thinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(buttonTitle)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 216, maxHeight: 216)
+    }
+}
+
+private struct TemplatePickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let templates: [CardRemixTemplate]
+    let selectedTemplate: CardRemixTemplate?
+    let onSelect: (CardRemixTemplate) -> Void
+    let onClear: () -> Void
+
+    private var columns: [GridItem] {
+        [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 16) {
+                    if selectedTemplate != nil {
+                        Button {
+                            onClear()
+                            dismiss()
+                        } label: {
+                            TemplatePreviewCard(
+                                title: String(localized: "template.clear.title", defaultValue: "Без шаблона", bundle: appBundle(), locale: appLocale()),
+                                description: String(localized: "template.clear.subtitle", defaultValue: "Вернуться к выбору стиля", bundle: appBundle(), locale: appLocale()),
+                                imageName: "Card2",
+                                isSelected: false
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    ForEach(templates) { template in
+                        Button {
+                            onSelect(template)
+                            dismiss()
+                        } label: {
+                            TemplatePreviewCard(
+                                title: template.title,
+                                description: template.description,
+                                imageName: template.previewImageName,
+                                isSelected: template.id == selectedTemplate?.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(20)
+            }
+            .navigationTitle(String(localized: "template.sheet.title", defaultValue: "Выбор шаблона", bundle: appBundle(), locale: appLocale()))
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(String(localized: "common.close", defaultValue: "Закрыть", bundle: appBundle(), locale: appLocale())) {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct TemplatePreviewCard: View {
+    let title: String
+    let description: String?
+    let imageName: String
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(imageName)
+                .resizable()
+                .scaledToFill()
+                .aspectRatio(2.0 / 3.0, contentMode: .fill)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.white.opacity(isSelected ? 0.6 : 0.18), lineWidth: isSelected ? 2 : 0.8)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primary)
+                if let description {
+                    Text(description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(3)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(isSelected ? Color.accentColor : Color.white.opacity(0.18), lineWidth: isSelected ? 2 : 0.8)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 6, y: 3)
+    }
+}
+
+private struct PromptComposerBar<AddButton: View>: View {
+    @Binding var text: String
+    var placeholder: String
+    var charLimit: Int
+    var addButton: AddButton
+    var onIdeaTapped: () -> Void
+
+    @State private var editorHeight: CGFloat = 0
+    private let minEditorHeight: CGFloat = 64
+    private let showCharCounter: Bool = false
+    private let cornerRadius: CGFloat = 20
+
+    init(text: Binding<String>, placeholder: String, charLimit: Int, @ViewBuilder addButton: () -> AddButton, onIdeaTapped: @escaping () -> Void) {
+        self._text = text
+        self.placeholder = placeholder
+        self.charLimit = charLimit
+        self.addButton = addButton()
+        self.onIdeaTapped = onIdeaTapped
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            InsetTextView(
+                text: $text,
+                placeholder: placeholder,
+                charLimit: charLimit,
+                insets: UIEdgeInsets(top: 10, left: 14, bottom: 10, right: 14),
+                onHeightChange: { h in
+                    let newH = max(h, minEditorHeight)
+                    if abs(editorHeight - newH) > 0.5 { editorHeight = newH }
+                }
+            )
+            .frame(height: max(editorHeight, minEditorHeight), alignment: .leading)
+            .background(Color.clear)
+
+            HStack(spacing: 12) {
+                addButton
+                Button(action: onIdeaTapped) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text(String(localized: "idea.card", defaultValue: "Идея открытки", bundle: appBundle(), locale: appLocale()))
+                            .font(.callout.weight(.semibold))
+                        HStack(spacing: 3) {
+                            Image(systemName: "bolt.fill")
+                                .foregroundColor(.yellow)
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("1")
+                                .font(.footnote.weight(.bold))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.white.opacity(0.18)))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(.thinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color.white.opacity(0.7))
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(Color.white.opacity(0.35), lineWidth: 0.8)
+        )
+        .overlay(alignment: .bottomTrailing) {
+            if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button(action: {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        text = ""
+                    }
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .semibold))
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 11)
+                        .background(.thinMaterial, in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 8)
+                .padding(.trailing, 16)
+                .accessibilityLabel(String(localized: "accessibility.clear_text", defaultValue: "Очистить текст", bundle: appBundle(), locale: appLocale()))
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if showCharCounter {
+                Text("\(text.count)/\(charLimit)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundColor(text.count > charLimit ? .red : .secondary)
+                    .padding(.trailing, 12)
+                    .padding(.bottom, 8)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - UITextView with insets & placeholder matching cursor baseline
 // MARK: - Pill Menus (Aspect Ratio & Quality)
 private struct AspectRatioMenuPill: View {
     @Binding var selected: CardAspectRatio
@@ -1203,119 +1860,7 @@ private struct StyleMenuPill: View {
     }
 }
 
-// MARK: - Prompt Composer Bar (glass-like)
-private struct PromptComposerBar: View {
-    @Binding var text: String
-    var placeholder: String
-    var charLimit: Int
-    var onAddTapped: () -> Void
-    var onIdeaTapped: () -> Void
-
-    private let fieldHeight: CGFloat = 120 // +~1 строка к прежним ~90
-    private let cornerRadius: CGFloat = 20
-    private let showCharCounter: Bool = false
-    @State private var editorHeight: CGFloat = 0
-    private let minEditorHeight: CGFloat = 64
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Top: Text field area (UIKit-backed for precise insets & placeholder alignment)
-            InsetTextView(
-                text: $text,
-                placeholder: placeholder,
-                charLimit: charLimit,
-                insets: UIEdgeInsets(top: 10, left: 14, bottom: 10, right: 14),
-                onHeightChange: { h in
-                    let newH = max(h, minEditorHeight)
-                    if abs(editorHeight - newH) > 0.5 { editorHeight = newH }
-                }
-            )
-            .frame(height: max(editorHeight, minEditorHeight), alignment: .leading)
-            .background(Color.clear)
-
-            // Bottom: buttons area
-            HStack(spacing: 12) {
-                Button(action: onAddTapped) {
-                    Label("", systemImage: "photo.badge.plus")
-                        .labelStyle(.iconOnly)
-                        .font(.system(size: 16, weight: .semibold))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(.thinMaterial, in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
-                }
-                .buttonStyle(.plain)
-
-                Button(action: onIdeaTapped) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "wand.and.stars")
-                            .font(.system(size: 15, weight: .semibold))
-                        Text(String(localized: "idea.card", defaultValue: "Идея открытки", bundle: appBundle(), locale: appLocale()))
-                            .font(.callout.weight(.semibold))
-                        HStack(spacing: 3) {
-                            Image(systemName: "bolt.fill")
-                                .foregroundColor(.yellow)
-                                .font(.system(size: 13, weight: .semibold))
-                            Text("1")
-                                .font(.footnote.weight(.bold))
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.white.opacity(0.18)))
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(.thinMaterial, in: Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
-                }
-                .buttonStyle(.plain)
-                .fixedSize()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(Color.white.opacity(0.7))
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(Color.white.opacity(0.35), lineWidth: 0.8)
-        )
-        .overlay(alignment: .bottomTrailing) {
-            if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button(action: {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        text = ""
-                    }
-                }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 15, weight: .semibold))
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 11)
-                        .background(.thinMaterial, in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
-                }
-                .buttonStyle(.plain)
-                .padding(.bottom, 8)
-                .padding(.trailing, 16)
-                .accessibilityLabel(String(localized: "accessibility.clear_text", defaultValue: "Очистить текст", bundle: appBundle(), locale: appLocale()))
-            }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            if showCharCounter {
-                Text("\(text.count)/\(charLimit)")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundColor(text.count > charLimit ? .red : .secondary)
-                    .padding(.trailing, 12)
-                    .padding(.bottom, 8)
-                    .accessibilityHidden(true)
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - UITextView with insets & placeholder matching cursor baseline
+// MARK: - UITextView helper
 private struct InsetTextView: UIViewRepresentable {
     @Binding var text: String
     var placeholder: String
@@ -1498,6 +2043,14 @@ enum CardQuality: String, CaseIterable, Identifiable {
         case .low:    return b.localizedString(forKey: "quality.low", value: "Низкое", table: "Localizable")
         case .medium: return b.localizedString(forKey: "quality.medium", value: "Среднее", table: "Localizable")
         case .high:   return b.localizedString(forKey: "quality.high", value: "Высокое", table: "Localizable")
+        }
+    }
+
+    var apiValue: String {
+        switch self {
+        case .low: return "low"
+        case .medium: return "medium"
+        case .high: return "high"
         }
     }
 }

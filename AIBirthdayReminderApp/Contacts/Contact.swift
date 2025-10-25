@@ -12,15 +12,25 @@ public struct CongratsHistoryItem: Identifiable, Codable, Equatable {
     }
 }
 
+public enum CardHistorySource: String, Codable, Equatable {
+    case prompt
+    case photoRemix
+    case holiday
+}
+
 public struct CardHistoryItem: Identifiable, Codable, Equatable {
     public var id: UUID
     let date: Date
     let cardID: String
+    let source: CardHistorySource?
+    let templateId: String?
     
-    public init(id: UUID = UUID(), date: Date, cardID: String) {
+    public init(id: UUID = UUID(), date: Date, cardID: String, source: CardHistorySource? = nil, templateId: String? = nil) {
         self.id = id
         self.date = date
         self.cardID = cardID
+        self.source = source
+        self.templateId = templateId
     }
 }
 

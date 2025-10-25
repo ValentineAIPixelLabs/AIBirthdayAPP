@@ -894,6 +894,12 @@ final class CoreDataManager {
         if target.imageData == nil && source.imageData != nil {
             target.imageData = source.imageData
         }
+        if target.source?.isEmpty != false && source.source?.isEmpty == false {
+            target.source = source.source
+        }
+        if target.templateId?.isEmpty != false && source.templateId?.isEmpty == false {
+            target.templateId = source.templateId
+        }
         
         // Для дат - берем более свежие данные
         if let sourceDate = source.date, target.date == nil || sourceDate > (target.date ?? Date.distantPast) {
@@ -985,6 +991,8 @@ final class CoreDataManager {
         target.cardID = source.cardID
         target.imageData = source.imageData
         target.holidayID = source.holidayID
+        target.source = source.source
+        target.templateId = source.templateId
         // Note: relationship к contact будет восстановлен после миграции контактов
     }
     

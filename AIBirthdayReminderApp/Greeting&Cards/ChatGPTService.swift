@@ -130,6 +130,242 @@ final class ChatGPTService {
         self.requestImageGeneration(prompt: finalPrompt, target: .contact(contact.id), quality: quality, referenceImageData: referenceImageData, size: size, completion: completion)
     }
 
+    func generateCardRemix(for contact: Contact, template: CardRemixTemplate, userIdea: String?, sourceImage: UIImage, quality: String?, size: String?, completion: @escaping (Result<UIImage, Error>) -> Void) {
+        let trimmedIdea = userIdea?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var finalPrompt = template.prompt
+        if !trimmedIdea.isEmpty {
+            finalPrompt.append("\n\nAdditional idea for the card: \(trimmedIdea)")
+        }
+
+        guard let encodedImage = sourceImage.jpegData(compressionQuality: 0.92) else {
+            let error = NSError(domain: "ImageRemix", code: -10, userInfo: [NSLocalizedDescriptionKey: "Не удалось подготовить фото для отправки"])
+            DispatchQueue.main.async { completion(.failure(error)) }
+            return
+        }
+
+        DispatchQueue.main.async {
+            let token = DeviceAccountManager.shared.appAccountToken()
+            guard !token.isEmpty else {
+                completion(.failure(self.missingTokenError()))
+                return
+            }
+            guard let url = URL(string: "https://aibirthday-backend.up.railway.app/api/image-remix") else {
+                completion(.failure(NSError(domain: "ImageRemix", code: -11, userInfo: [NSLocalizedDescriptionKey: "Invalid remix endpoint URL"])))
+                return
+            }
+
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 240
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
+
+            let payload: [String: Any] = [
+                "templateId": template.id,
+                "promptText": finalPrompt,
+                "imageBase64": encodedImage.base64EncodedString()
+            ]
+
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+            } catch {
+                completion(.failure(error))
+                return
+            }
+
+            let task = URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    DispatchQueue.main.async { completion(.failure(error)) }
+                    return
+                }
+                guard let data = data else {
+                    DispatchQueue.main.async {
+                        completion(.failure(NSError(domain: "ImageRemix", code: -12, userInfo: [NSLocalizedDescriptionKey: "Пустой ответ сервера"])))
+                    }
+                    return
+                }
+
+                if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                    let message = ChatGPTService.backendErrorMessage(from: data) ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
+                    if http.statusCode == 404 {
+                        self.performFallbackRemix(for: contact, prompt: finalPrompt, imageData: encodedImage, quality: quality, size: size, template: template, completion: completion)
+                    } else if http.statusCode == 500 || http.statusCode == 503 || http.statusCode == 422 {
+                        let friendly = NSLocalizedString(
+                            "remix.quality.unavailable",
+                            tableName: "Localizable",
+                            bundle: .main,
+                            value: "Выбранное качество сейчас недоступно. Попробуйте другое качество.",
+                            comment: "Friendly alert when remix quality is unavailable"
+                        )
+                        let err = NSError(domain: "ImageRemix", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: friendly])
+                        DispatchQueue.main.async { completion(.failure(err)) }
+                    } else {
+                        let err = NSError(domain: "ImageRemix", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: message])
+                        DispatchQueue.main.async { completion(.failure(err)) }
+                    }
+                    return
+                }
+
+                func persist(image: UIImage) {
+                    Task { @MainActor in
+                        let dataForSaving = image.jpegData(compressionQuality: 0.92) ?? data
+                        let imageToSave = UIImage(data: dataForSaving) ?? image
+                        let newCardId = UUID()
+                        let cardItem = CardHistoryItem(
+                            id: newCardId,
+                            date: Date(),
+                            cardID: newCardId.uuidString,
+                            source: .photoRemix,
+                            templateId: template.id
+                        )
+                        CardHistoryManager.addCard(item: cardItem, image: imageToSave, for: contact.id) {
+                            completion(.success(imageToSave))
+                        }
+                    }
+                }
+
+                do {
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        if let success = json["success"] as? Bool, success == false {
+                            let message = json["message"] as? String ?? json["error"] as? String ?? "Не удалось создать открытку"
+                            throw NSError(domain: "ImageRemix", code: -13, userInfo: [NSLocalizedDescriptionKey: message])
+                        }
+                        if let base64 = json["imageBase64"] as? String ?? json["image"] as? String,
+                           let decoded = Data(base64Encoded: base64),
+                           let image = UIImage(data: decoded) {
+                            DispatchQueue.main.async { persist(image: image) }
+                            return
+                        }
+                        if let errorMessage = json["error"] as? String ?? json["message"] as? String {
+                            throw NSError(domain: "ImageRemix", code: -13, userInfo: [NSLocalizedDescriptionKey: errorMessage])
+                        }
+                    }
+
+                    if let image = UIImage(data: data) {
+                        DispatchQueue.main.async { persist(image: image) }
+                    } else {
+                        throw NSError(domain: "ImageRemix", code: -14, userInfo: [NSLocalizedDescriptionKey: "Не удалось декодировать изображение"])
+                    }
+                } catch {
+                    DispatchQueue.main.async { completion(.failure(error)) }
+                }
+            }
+            task.resume()
+        }
+    }
+
+
+    private static func backendErrorMessage(from data: Data) -> String? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if let message = json["message"] as? String, !message.isEmpty { return message }
+        if let error = json["error"] as? String, !error.isEmpty { return error }
+        return nil
+    }
+
+    private func performFallbackRemix(for contact: Contact, prompt: String, imageData: Data, quality: String?, size: String?, template: CardRemixTemplate, completion: @escaping (Result<UIImage, Error>) -> Void) {
+        DispatchQueue.main.async {
+            let token = DeviceAccountManager.shared.appAccountToken()
+            guard !token.isEmpty else {
+                completion(.failure(self.missingTokenError()))
+                return
+            }
+            guard let url = URL(string: "https://aibirthday-backend.up.railway.app/api/generate_card_image") else {
+                completion(.failure(NSError(domain: "ImageRemixFallback", code: -11, userInfo: [NSLocalizedDescriptionKey: "Invalid fallback endpoint URL"])))
+                return
+            }
+
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 240
+            request.httpMethod = "POST"
+
+            let boundary = "Boundary-\(UUID().uuidString)"
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.setValue(token, forHTTPHeaderField: "X-App-Account-Token")
+
+            var body = Data()
+            func appendField(name: String, value: String) {
+                body.append("--\(boundary)\r\n".data(using: .utf8)!)
+                body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+                body.append(value.data(using: .utf8)!)
+                body.append("\r\n".data(using: .utf8)!)
+            }
+
+            appendField(name: "prompt", value: prompt)
+            if let quality = quality {
+                appendField(name: "quality", value: quality)
+            }
+            if let size = size {
+                appendField(name: "size", value: size)
+            }
+
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"reference\"; filename=\"reference.jpg\"\r\n".data(using: .utf8)!)
+            body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+            body.append(imageData)
+            body.append("\r\n".data(using: .utf8)!)
+            body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+            request.httpBody = body
+
+            let task = URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    DispatchQueue.main.async { completion(.failure(error)) }
+                    return
+                }
+                guard let data = data else {
+                    DispatchQueue.main.async {
+                        completion(.failure(NSError(domain: "ImageRemixFallback", code: -12, userInfo: [NSLocalizedDescriptionKey: "Пустой ответ сервера (fallback)"])))
+                    }
+                    return
+                }
+
+                func persist(image: UIImage) {
+                    Task { @MainActor in
+                        let dataForSaving = image.jpegData(compressionQuality: 0.92) ?? data
+                        let imageToSave = UIImage(data: dataForSaving) ?? image
+                        let newCardId = UUID()
+                        let item = CardHistoryItem(
+                            id: newCardId,
+                            date: Date(),
+                            cardID: newCardId.uuidString,
+                            source: .photoRemix,
+                            templateId: template.id
+                        )
+                        CardHistoryManager.addCard(item: item, image: imageToSave, for: contact.id) {
+                            completion(.success(imageToSave))
+                        }
+                    }
+                }
+
+                do {
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        if let success = json["success"] as? Bool, success == false {
+                            let message = json["message"] as? String ?? json["error"] as? String ?? "Не удалось создать открытку"
+                            throw NSError(domain: "ImageRemixFallback", code: -13, userInfo: [NSLocalizedDescriptionKey: message])
+                        }
+                        if let base64 = json["image"] as? String ?? json["imageBase64"] as? String,
+                           let decoded = Data(base64Encoded: base64),
+                           let image = UIImage(data: decoded) {
+                            DispatchQueue.main.async { persist(image: image) }
+                            return
+                        }
+                        if let errorMessage = json["error"] as? String ?? json["message"] as? String {
+                            throw NSError(domain: "ImageRemixFallback", code: -13, userInfo: [NSLocalizedDescriptionKey: errorMessage])
+                        }
+                    }
+
+                    if let image = UIImage(data: data) {
+                        DispatchQueue.main.async { persist(image: image) }
+                    } else {
+                        throw NSError(domain: "ImageRemixFallback", code: -14, userInfo: [NSLocalizedDescriptionKey: "Не удалось декодировать изображение (fallback)"])
+                    }
+                } catch {
+                    DispatchQueue.main.async { completion(.failure(error)) }
+                }
+            }
+            task.resume()
+        }
+    }
+
     // Генерация открытки по празднику с персонализацией (или без)
     func generateCardForHoliday(holidayId: UUID, holidayTitle: String, contact: Contact?, completion: @escaping () -> Void) {
         var promptLines: [String] = []
@@ -249,7 +485,21 @@ final class ChatGPTService {
                         let jpegData = image.jpegData(compressionQuality: 0.92)
                         let imageToSave = jpegData.flatMap { UIImage(data: $0) } ?? image
                         let newCardId = UUID()
-                        let newCard = CardHistoryItem(id: newCardId, date: Date(), cardID: newCardId.uuidString)
+                        let newCardSource: CardHistorySource? = {
+                            switch target {
+                            case .contact:
+                                return .prompt
+                            case .holiday:
+                                return .holiday
+                            }
+                        }()
+                        let newCard = CardHistoryItem(
+                            id: newCardId,
+                            date: Date(),
+                            cardID: newCardId.uuidString,
+                            source: newCardSource,
+                            templateId: nil
+                        )
                         Task { @MainActor in
                             switch target {
                             case .contact(let id):

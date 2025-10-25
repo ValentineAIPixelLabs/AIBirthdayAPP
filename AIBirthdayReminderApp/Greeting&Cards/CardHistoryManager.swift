@@ -6,6 +6,8 @@ struct CardHistoryItemWithImage {
     let date: Date
     let cardID: String
     let image: UIImage?
+    let source: CardHistorySource?
+    let templateId: String?
 }
 
 @MainActor
@@ -56,6 +58,8 @@ final class CardHistoryManager {
                 }
                 entity.date = item.date
                 entity.cardID = item.cardID
+                entity.source = item.source?.rawValue
+                entity.templateId = item.templateId
                 // JPEG обычно заметно меньше PNG. При включенном Allows External Storage большие данные уйдут в CKAsset.
                 entity.imageData = image.jpegData(compressionQuality: 0.85)
                 if let data = entity.imageData {
@@ -95,7 +99,9 @@ final class CardHistoryManager {
                     id: $0.id ?? UUID(),
                     date: $0.date ?? .distantPast,
                     cardID: $0.cardID ?? "",
-                    image: $0.imageData.flatMap { UIImage(data: $0) }
+                    image: $0.imageData.flatMap { UIImage(data: $0) },
+                    source: $0.source.flatMap { CardHistorySource(rawValue: $0) },
+                    templateId: $0.templateId
                 )
             }
         } catch {
@@ -135,6 +141,8 @@ final class CardHistoryManager {
             }
             entity.date = item.date
             entity.cardID = item.cardID
+            entity.source = item.source?.rawValue
+            entity.templateId = item.templateId
             entity.holidayID = holidayId // <-- поле в модели Core Data
             entity.imageData = image.jpegData(compressionQuality: 0.85)
             if let data = entity.imageData {
@@ -171,7 +179,9 @@ final class CardHistoryManager {
                     id: $0.id ?? UUID(),
                     date: $0.date ?? .distantPast,
                     cardID: $0.cardID ?? "",
-                    image: $0.imageData.flatMap { UIImage(data: $0) }
+                    image: $0.imageData.flatMap { UIImage(data: $0) },
+                    source: $0.source.flatMap { CardHistorySource(rawValue: $0) },
+                    templateId: $0.templateId
                 )
             }
         } catch {

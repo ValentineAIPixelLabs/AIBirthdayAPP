@@ -2573,6 +2573,28 @@
         }
       }
     },
+    "photo.replace" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Заменить фото"
+          }
+        }
+      }
+    },
+    "photo.replace.accessibility" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Заменить выбранное фото"
+          }
+        }
+      }
+    },
     "popup.congrats.title" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3079,6 +3101,92 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Супруг"
+          }
+        }
+      }
+    },
+    "remix.placeholder.button" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выбрать фото"
+          }
+        }
+      }
+    },
+    "remix.placeholder.title" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пожалуйста, выберите фотографию"
+          }
+        }
+      }
+    },
+    "remix.preview.example" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Пример результата"
+          }
+        }
+      }
+    },
+    "remix.preview.generating" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Генерация открытки…"
+          }
+        }
+      }
+    },
+    "remix.preview.photo" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Фото выбрано"
+          }
+        }
+      }
+    },
+    "remix.preview.result" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Готовая открытка"
+          }
+        }
+      }
+    },
+    "remix.preview.template" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Шаблон выбран"
+          }
+        }
+      }
+    },
+    "remix.quality.unavailable" : {
+      "comment" : "Friendly alert when remix quality is unavailable",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выбранное качество сейчас недоступно. Попробуйте другое качество."
           }
         }
       }
@@ -4473,6 +4581,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Настройки"
+          }
+        }
+      }
+    },
+    "template.button.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Шаблон"
+          }
+        }
+      }
+    },
+    "template.clear.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Вернуться к выбору стиля"
+          }
+        }
+      }
+    },
+    "template.clear.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Без шаблона"
+          }
+        }
+      }
+    },
+    "template.sheet.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Выбор шаблона"
           }
         }
       }

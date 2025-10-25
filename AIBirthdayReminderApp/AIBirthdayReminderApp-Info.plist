@@ -26,6 +26,8 @@
 	<string>Для установки фотографии профиля.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Чтобы импортировать контакты и автоматически создавать карточки.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Для сохранения открыток в фотоплёнку.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Для выбора фото из галереи.</string>
 	<key>UIApplicationSceneManifest</key>

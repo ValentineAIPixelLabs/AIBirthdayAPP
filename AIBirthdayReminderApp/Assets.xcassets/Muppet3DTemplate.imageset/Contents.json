@@ -1,0 +1,21 @@
+{
+  "images" : [
+    {
+      "filename" : "20250724_2059_3D Plush Character Transformation_remix_01k0ys5tqjf6qvevj6aagz0036.png",
+      "idiom" : "universal",
+      "scale" : "1x"
+    },
+    {
+      "idiom" : "universal",
+      "scale" : "2x"
+    },
+    {
+      "idiom" : "universal",
+      "scale" : "3x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

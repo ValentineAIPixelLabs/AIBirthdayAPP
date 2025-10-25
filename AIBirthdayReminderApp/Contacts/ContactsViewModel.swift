@@ -204,7 +204,7 @@ class ContactsViewModel: NSObject, ObservableObject {
                     phoneNumber: entity.phoneNumber,
                     congratsHistory: CongratsHistoryManager.getCongrats(for: entityId),
                     cardHistory: CardHistoryManager.getCards(for: entityId).map {
-                        CardHistoryItem(id: $0.id, date: $0.date, cardID: $0.cardID)
+                        CardHistoryItem(id: $0.id, date: $0.date, cardID: $0.cardID, source: $0.source, templateId: $0.templateId)
                     }
                 )
             }
@@ -394,7 +394,8 @@ class ContactsViewModel: NSObject, ObservableObject {
             let cards: [CardHistoryItem] = (e.cardHistory as? Set<CardHistoryEntity> ?? [])
                 .compactMap { he in
                     guard let id = he.id, let date = he.date else { return nil }
-                    return CardHistoryItem(id: id, date: date, cardID: he.cardID ?? "")
+                    let source = he.source.flatMap(CardHistorySource.init(rawValue:))
+                    return CardHistoryItem(id: id, date: date, cardID: he.cardID ?? "", source: source, templateId: he.templateId)
                 }
                 .sorted { $0.date > $1.date }
 
