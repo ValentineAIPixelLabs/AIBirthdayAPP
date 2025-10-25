@@ -1238,10 +1238,6 @@ private struct CardGenerationSection: View {
         generateDisabled ? 0.6 : 1
     }
 
-    private var addPhotoSymbolName: String {
-        referenceImage == nil ? "photo.badge.plus" : "photo.fill"
-    }
-
     private var templateButtonTitle: String {
         if let template = selectedTemplate {
             return template.title
@@ -1277,18 +1273,6 @@ private struct CardGenerationSection: View {
                 text: $prompt,
                 placeholder: String(localized: "prompt.placeholder", defaultValue: "Опишите идею открытки или нажмите на кнопку «Идея открытки» для автоматической генерации", bundle: appBundle(), locale: appLocale()),
                 charLimit: promptCharLimit,
-                addButton: {
-                    PhotosPicker(selection: $photoPickerItem, matching: .images) {
-                        Image(systemName: addPhotoSymbolName)
-                            .font(.system(size: 16, weight: .semibold))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 9)
-                            .background(.thinMaterial, in: Capsule())
-                            .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(String(localized: "gallery.pick_reference", defaultValue: "Выбрать фото из галереи", bundle: appBundle(), locale: appLocale()))
-                },
                 onIdeaTapped: onGeneratePrompt
             )
 
@@ -1343,7 +1327,7 @@ private struct CardGenerationSection: View {
                 } label: {
                     actionCapsule(
                         icon: "trash",
-                        title: String(localized: "reference.remove", defaultValue: "Удалить референс", bundle: appBundle(), locale: appLocale())
+                        title: String(localized: "reference.remove", defaultValue: "Удалить фото", bundle: appBundle(), locale: appLocale())
                     )
                 }
                 .buttonStyle(.plain)
@@ -1538,7 +1522,7 @@ private struct CardRemixPlaceholder: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(.systemGray5).opacity(0.6))
+                .fill(Color.white.opacity(0.7))
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .stroke(Color.white.opacity(0.18), lineWidth: 0.9)
@@ -1671,11 +1655,10 @@ private struct TemplatePreviewCard: View {
     }
 }
 
-private struct PromptComposerBar<AddButton: View>: View {
+private struct PromptComposerBar: View {
     @Binding var text: String
     var placeholder: String
     var charLimit: Int
-    var addButton: AddButton
     var onIdeaTapped: () -> Void
 
     @State private var editorHeight: CGFloat = 0
@@ -1683,11 +1666,10 @@ private struct PromptComposerBar<AddButton: View>: View {
     private let showCharCounter: Bool = false
     private let cornerRadius: CGFloat = 20
 
-    init(text: Binding<String>, placeholder: String, charLimit: Int, @ViewBuilder addButton: () -> AddButton, onIdeaTapped: @escaping () -> Void) {
+    init(text: Binding<String>, placeholder: String, charLimit: Int, onIdeaTapped: @escaping () -> Void) {
         self._text = text
         self.placeholder = placeholder
         self.charLimit = charLimit
-        self.addButton = addButton()
         self.onIdeaTapped = onIdeaTapped
     }
 
@@ -1707,7 +1689,6 @@ private struct PromptComposerBar<AddButton: View>: View {
             .background(Color.clear)
 
             HStack(spacing: 12) {
-                addButton
                 Button(action: onIdeaTapped) {
                     HStack(spacing: 8) {
                         Image(systemName: "wand.and.stars")
